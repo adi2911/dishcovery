@@ -1,2 +1,2 @@
-# dishcovery
+# Dishcovery
 A recipe search engine. 
