@@ -1,0 +1,35 @@
+.search-card {
+  @apply bg-gray-900 bg-opacity-90 text-white shadow-lg rounded-md p-6 max-w-3xl mx-auto;
+}
+
+.label {
+  @apply text-lg font-medium mb-2 block;
+}
+
+.dropdown {
+  @apply w-full p-2 bg-gray-700 text-white rounded-md border-none focus:outline-none focus:bg-gray-600;
+}
+
+.dropdown option {
+  @apply bg-gray-800 text-white hover:bg-gray-600;
+}
+
+.input {
+  @apply w-full p-2 bg-gray-700 text-white rounded-md border-none focus:outline-none focus:bg-gray-600 mb-4;
+}
+
+.ingredients-container {
+  @apply flex flex-wrap gap-2 mt-2;
+}
+
+.ingredient-item {
+  @apply bg-gray-700 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-sm;
+}
+
+.close-btn {
+  @apply bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-gray-400;
+}
+
+.search-btn {
+  @apply w-full p-2 bg-gray-700 text-white rounded-md text-lg cursor-pointer hover:bg-gray-600;
+}
