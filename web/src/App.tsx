@@ -1,9 +1,11 @@
 import "./App.css";
 import Header from './components/Header';
 import SearchCard from './components/SearchCard';
+import { UserProvider } from "./store/UserContext";
 
 export default function App() {
   return (
+    <UserProvider>
     <div
       className="min-h-screen bg-cover bg-center"
       style={{
@@ -16,5 +18,6 @@ export default function App() {
         <SearchCard />
       </div>
     </div>
+    </UserProvider>
   );
 }

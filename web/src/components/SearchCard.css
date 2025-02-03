@@ -2,22 +2,36 @@
   @apply bg-gray-900 bg-opacity-90 text-white shadow-lg rounded-md p-6 max-w-3xl mx-auto;
 }
 
+/* A more stylish title */
+.title {
+  @apply text-2xl font-extrabold italic mb-4 tracking-wide;
+}
+
 .label {
-  @apply text-lg font-medium mb-2 block;
+  @apply text-lg font-semibold italic mb-2 block;
 }
 
-.dropdown {
-  @apply w-full p-2 bg-gray-700 text-white rounded-md border-none focus:outline-none focus:bg-gray-600;
+/* Dropdown button & menu */
+.dropdown-button {
+  @apply w-full p-2 bg-gray-700 text-white rounded-md border border-gray-500 
+           focus:outline-none focus:bg-gray-600 inline-flex items-center justify-between;
 }
 
-.dropdown option {
-  @apply bg-gray-800 text-white hover:bg-gray-600;
+.dropdown-menu {
+  @apply border border-gray-500 bg-gray-800 rounded-md mt-1 w-full;
 }
 
+.dropdown-item {
+  @apply w-full text-left px-4 py-2 text-sm text-white hover:cursor-pointer;
+}
+
+/* Inputs */
 .input {
-  @apply w-full p-2 bg-gray-700 text-white rounded-md border-none focus:outline-none focus:bg-gray-600 mb-4;
+  @apply w-full p-2 bg-gray-700 text-white rounded-md border border-gray-500 
+           focus:outline-none focus:bg-gray-600 mb-4;
 }
 
+/* Ingredients / Exclusions container & items */
 .ingredients-container {
   @apply flex flex-wrap gap-2 mt-2;
 }
@@ -30,6 +44,8 @@
   @apply bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-gray-400;
 }
 
+/* Search Button */
 .search-btn {
-  @apply w-full p-2 bg-gray-700 text-white rounded-md text-lg cursor-pointer hover:bg-gray-600;
+  @apply w-full p-3 bg-gray-700 text-white rounded-md text-lg cursor-pointer hover:bg-gray-600 
+           font-semibold italic;
 }
