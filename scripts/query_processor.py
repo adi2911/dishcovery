@@ -11,9 +11,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="{} : %(asctime)s - %(levelname)s : %(message)s".format("Query Processing Module")
 )
-logger = logging.getLogger()
 
-logger.info("Begin")
 
 class QueryProcessor:
     def __init__(self, stop_word_path=None, use_stopwords=True, use_stemming=True):
@@ -114,6 +112,36 @@ class QueryProcessor:
         """
         phrases_queries = re.findall(r'"(.*?)"', query)
         return phrases_queries
+    
+
+
+    def query_n_gram(self, processed_query):
+        """
+        Appends bigrams and trigrams of all words in the processed query (tokenised)
+
+        Args:
+            processed_query (dict): Processed query containing key 'processed_tokens' which is processed token list
+
+        Returns:
+            dict: Processed query with 'processed_tokens' appended with bigram and trigram tokens
+        """
+        logging.info("Generating n-grams for the processed query")
+        start_time = datetime.datetime.now()
+        
+        tokens = processed_query['processed_tokens']
+        bigrams = [tokens[i] + "_" + tokens[i+1] for i in range(len(tokens) - 1)]
+        trigrams = [tokens[i] + "_" + tokens[i+1] + "_" + tokens[i+2] for i in range(len(tokens) - 2)]
+        
+        processed_query['processed_tokens'].extend(bigrams)
+        processed_query['processed_tokens'].extend(trigrams)
+        
+        logging.info("n-grams generation completed in {}".format(datetime.datetime.now() - start_time))
+        return processed_query['processed_tokens']
+
+    def query_expansion_PRF(self,query):
+        pass
+
+
 
     def process_query(self, query):
         """
@@ -150,6 +178,8 @@ class QueryProcessor:
             tokenised_query = self.text_stemmer(tokenised_query)
 
         processed_query['processed_tokens'] = tokenised_query
+        processed_query['processed_tokens'] = self.query_n_gram(processed_query)
+        
 
 
         logging.info("Query processing completed in {}".format(datetime.datetime.now() - start_time))
