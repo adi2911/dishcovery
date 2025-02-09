@@ -35,16 +35,6 @@ def signin():
         return jsonify({'error': 'Invalid Access Token'}), 400
 
     user_info = google_resp.json()
-    # user_info should now look like:
-    # {
-    #   "sub": "...",
-    #   "name": "John Doe",
-    #   "given_name": "John",
-    #   "family_name": "Doe",
-    #   "picture": "https://...",
-    #   "email": "john.doe@gmail.com",
-    #   ...
-    # }
 
     # Example user structure
     user_id = str(uuid.uuid4())
@@ -86,6 +76,98 @@ def get_user():
         return jsonify({'user': user_doc.to_dict()}), 200
     else:
         return jsonify({'error': 'User not found'}), 404
+    
+
+
+
+@app.route('/api/searchByIngredients', methods=['POST'])
+def search_by_ingredients():
+    data = request.json
+    ingredients = data.get('ingredients', [])
+    exclude = data.get('exclude', [])
+    diet_preference = data.get('dietPreference', 'none')
+
+    # TODO: Implement actual search logic
+    # Query Processing Integration
+
+    print("Ingredients search:")
+    print("ingredients:", ingredients)
+    print("exclude:", exclude)
+    print("dietPreference:", diet_preference)
+
+    #RAW data store....
+
+    results = [
+        {
+            "id":"unique id for recipe",
+            "title": "Dummy Ingredient Recipe",
+            "ingredients": ["Tomato", "Onion", "Garlic"],
+            "diet": "vegan", #optional
+            "instructions": "LONG text",
+            "url":"url for the actual website"
+        }
+    ]
+    return jsonify({"results": results}), 200
+
+
+@app.route('/api/searchByText', methods=['POST'])
+def search_by_text():
+    data = request.json
+    text = data.get('text', '')
+    exclude = data.get('exclude', [])
+    diet_preference = data.get('dietPreference', 'none')
+
+    # TODO: Implement actual search logic
+    # Query Processing Integration
+
+    print("Text search:")
+    print("text:", text)
+    print("exclude:", exclude)
+    print("dietPreference:", diet_preference)
+
+    results = [
+        {
+            "id":"unique id for recipe",
+            "title": "Dummy Text Recipe",
+            "ingredients":"list of dummy ingredients",
+            "description": "Delicious recipe found by text search: " + text,
+            "diet": "vegetarian",
+        }
+    ]
+    return jsonify({"results": results}), 200
+
+
+@app.route('/api/recipes/<recipe_id>', methods=['GET'])
+def get_recipe_by_id(recipe_id):
+    # TODO: Implement actual search logic
+    # 1. Query  DB / Firestore for the recipe doc with ID = recipe_id
+
+    # Example dummy data:
+    dummy_db = {
+        "123": {
+            "id": "123",
+            "title": "Famous Vegan Chili",
+            "ingredients": ["Beans", "Tomato", "Onion", "Garlic"],
+            "diet": "vegan",
+            "instructions": "Put ingredients in pot. Stir. Simmer for 30 minutes."
+        },
+        "456": {
+            "id": "456",
+            "title": "Delicious Gluten-Free Pasta",
+            "ingredients": ["Gluten-Free Pasta", "Tomato Sauce", "Basil"],
+            "diet": "gluten-free",
+            "instructions": "Boil pasta. Add sauce. Enjoy."
+        }
+    }
+
+    recipe = dummy_db.get(recipe_id)
+    if recipe:
+        return jsonify(recipe), 200
+    else:
+        return jsonify({"error": "Recipe not found"}), 404
+
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)

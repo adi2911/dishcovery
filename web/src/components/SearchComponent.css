@@ -1,0 +1,128 @@
+   .search-card {
+    @apply bg-gray-900 bg-opacity-90 text-white shadow-lg rounded-md p-6 max-w-3xl mx-auto;
+  }
+  
+  /* A more stylish title */
+  .title {
+    @apply text-2xl font-extrabold italic mb-4 tracking-wide;
+  }
+  
+  .label {
+    @apply text-lg font-semibold italic mb-2 block;
+  }
+  
+  /* Dropdown button & menu */
+  .dropdown-button {
+    @apply w-full p-2 bg-gray-700 text-white rounded-md border border-gray-500 
+             focus:outline-none focus:bg-gray-600 inline-flex items-center justify-between;
+  }
+  
+  .dropdown-menu {
+    @apply border border-gray-500 bg-gray-800 rounded-md mt-1 w-full;
+  }
+  
+  .dropdown-item {
+    @apply w-full text-left px-4 py-2 text-sm text-white hover:cursor-pointer;
+  }
+  
+  /* Inputs */
+  .input {
+    @apply w-full p-2 bg-gray-700 text-white rounded-md border border-gray-500 
+             focus:outline-none focus:bg-gray-600 mb-4;
+  }
+  
+  /* Ingredients / Exclusions container & items */
+  .ingredients-container {
+    @apply flex flex-wrap gap-2 mt-2;
+  }
+  
+  .ingredient-item {
+    @apply bg-gray-700 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-sm;
+  }
+  
+  .close-btn {
+    @apply bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-gray-400;
+  }
+  
+  /* Search Button */
+  .search-btn {
+    @apply w-full p-3 bg-gray-700 text-white rounded-md text-lg cursor-pointer hover:bg-gray-600 
+             font-semibold italic;
+  }
+  
+  /* =========================
+     RESULTS MODE STYLES
+     (For 'viewMode' === 'results')
+     ========================= */
+  
+  /* Container wrapping everything in results mode */
+  .results-mode-container {
+    /* Keep the same or similar theme as .search-card for consistency */
+    /* If you want it to look like a different container, adjust as needed */
+    @apply bg-gray-900 bg-opacity-90 text-white shadow-lg rounded-md p-6 max-w-5xl mx-auto;
+  }
+  
+  /* The top row of filters (search type, diet preference, etc.) */
+  .top-filters {
+    @apply flex flex-wrap items-end gap-4 mb-6;
+  }
+  
+  .filter-item {
+    @apply flex flex-col min-w-[150px];
+  }
+  
+  .filter-label {
+    @apply text-lg font-semibold italic mb-2 text-white;
+  }
+  
+  .filter-input {
+    @apply p-2 bg-gray-700 text-white rounded-md border border-gray-500 
+             focus:outline-none focus:bg-gray-600;
+  }
+  
+  /* Chips row for ingredients/exclusions in results mode */
+  .chips-row {
+    @apply flex flex-wrap gap-2 mt-2;
+  }
+  .chips-label {
+    @apply text-white font-semibold italic;
+  }
+  .chip-item {
+    @apply bg-gray-700 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-sm;
+  }
+  .chip-close-btn {
+    @apply bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-gray-400;
+  }
+  
+  /* Search results list container */
+  .results-container {
+    @apply mt-6;
+  }
+  
+  /* Individual result items */
+  .result-item {
+    @apply bg-gray-800 text-white p-4 mb-3 rounded-md shadow-md hover:cursor-pointer 
+             hover:bg-gray-700 transition-colors;
+  }
+  .result-title {
+    @apply text-lg font-bold mb-1;
+  }
+  .result-subtitle {
+    @apply text-sm mb-2;
+  }
+  .result-snippet {
+    @apply text-sm text-gray-300;
+  }
+  
+  /* Pagination controls */
+  .pagination-controls {
+    @apply flex items-center justify-center gap-4 mt-4;
+  }
+  .pagination-btn {
+    @apply bg-gray-700 text-white px-3 py-2 rounded shadow-sm hover:bg-gray-600 
+             disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .pagination-info {
+    @apply text-white font-semibold;
+  }
+  
