@@ -2,9 +2,17 @@
 import os
 import json
 import re
+from collections import defaultdict
+import sys
 
 import Stemmer  
 stemmer = Stemmer.Stemmer('english')
+
+field_map = {
+    "title": 0,
+    "ingredients": 1,
+    "instructions": 2
+}
 
 def load_stopwords_from_txt(filepath):
     """
@@ -70,7 +78,7 @@ def preprocess_ingredient_line(line: str, stopwords_set) -> str:
     # Join them with underscores
     return "_".join(tokens_no_sw)
 
-def process_recipes(input_path: str, output_path: str, stopwords_path: str) -> None:
+def process_recipes(input_path: str, stopwords_path: str) -> None:
     """
     1. Reads the data/sample.json recipes from input_path
     2. Loads the stopwords from stopwords_path
@@ -89,7 +97,14 @@ def process_recipes(input_path: str, output_path: str, stopwords_path: str) -> N
     # Load stopwords
     stopwords_set = load_stopwords_from_txt(stopwords_path)
     processed_output = []
+
+    n = 1
     for recipe in recipes:
+        # Logging time
+        sys.stdout.write(f"Processed recipes: {n}\n")
+        sys.stdout.flush()
+        n +=1
+
         recipe_id = recipe.get('id', 'unknown_id')
         title = recipe.get('title', '')
         title_tokens = preprocess_text(title, stopwords_set)
@@ -116,16 +131,49 @@ def process_recipes(input_path: str, output_path: str, stopwords_path: str) -> N
             "instructions": instructions_tokens
         }
         processed_output.append(processed_recipe)
-    with open(output_path, 'w', encoding='utf-8') as out_f:
-        json.dump(processed_output, out_f, indent=2, ensure_ascii=False)
+    
+    return processed_output
+
+
+def build_inverted_idx(data):
+    """
+    Builds inverted idx from tokenized JSON file for title, ingredients and steps
+    """
+    inverted_idx = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    doc_map = defaultdict()
+    n = 1
+    for idx, doc in enumerate(data):
+        doc_id = idx+1
+
+        # Logging time
+        sys.stdout.write(f"Indexed recipes: {n}\n")
+        sys.stdout.flush()
+        n +=1
+
+        for field, field_id in field_map.items():
+            tokens = doc[field]
+            for pos, token in enumerate(tokens):
+                inverted_idx[token][doc_id][field_id].append(pos+1)
+
+        doc_map[doc_id] = doc["id"]
+    
+    with open(os.path.join('data', 'doc_map.json'), 'w') as map_file:
+        json.dump(doc_map, map_file, indent=2)
+
+    return inverted_idx
 
 def main():
     #Adjust paths as needed
-    input_path = os.path.join('data', 'sample.json')
-    output_path = os.path.join('data', 'sample_processed.json')
+    input_path = os.path.join('data', 'layer1.json')
+    output_path = os.path.join('data', 'indexed_processed.json')
     stopwords_path = os.path.join('data', 'stopwords.txt')
     
-    process_recipes(input_path, output_path, stopwords_path)
+    data = process_recipes(input_path, stopwords_path)
+
+    inverted_index = build_inverted_idx(data)
+
+    with open(output_path, 'w') as file:
+        json.dump(inverted_index, file, indent=4)
 
 if __name__ == "__main__":
     main()
