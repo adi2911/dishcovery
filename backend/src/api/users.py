@@ -7,6 +7,8 @@ import uuid
 import os
 import requests
 
+from backend.scripts.query_processor import QueryProcessor
+
 
 # Setup Flask
 app = Flask(__name__)
@@ -80,6 +82,7 @@ def get_user():
 
 
 
+
 @app.route('/api/searchByIngredients', methods=['POST'])
 def search_by_ingredients():
     data = request.json
@@ -87,24 +90,31 @@ def search_by_ingredients():
     exclude = data.get('exclude', [])
     diet_preference = data.get('dietPreference', 'none')
 
-    # TODO: Implement actual search logic
-    # Query Processing Integration
+    # Initialize QueryProcessor
+    processor = QueryProcessor(stop_word_path="data/stop_words_english.txt", use_stemming=True)
+
+    # Construct a boolean query from ingredients and exclude lists
+    processed_query = processor.process_query_ingredients(ingredients, exclude)
+
+    #CALL KRISHI's function
+    ranked_documents = processor.get_ranked_documents(processed_query, False)
+
+
+    results = processor.get_recipe_from_store(ranked_documents, diet_preference)
 
     print("Ingredients search:")
-    print("ingredients:", ingredients)
-    print("exclude:", exclude)
-    print("dietPreference:", diet_preference)
+    print("Processed query:", processed_query)
+    print("Diet Preference:", diet_preference)
 
-    #RAW data store....
-
+    # Dummy results
     results = [
         {
-            "id":"unique id for recipe",
+            "id": "unique_id_1",
             "title": "Dummy Ingredient Recipe",
             "ingredients": ["Tomato", "Onion", "Garlic"],
-            "diet": "vegan", #optional
+            "diet": "vegan",
             "instructions": "LONG text",
-            "url":"url for the actual website"
+            "url": "url_for_recipe"
         }
     ]
     return jsonify({"results": results}), 200
@@ -117,24 +127,34 @@ def search_by_text():
     exclude = data.get('exclude', [])
     diet_preference = data.get('dietPreference', 'none')
 
-    # TODO: Implement actual search logic
-    # Query Processing Integration
+    # Initialize QueryProcessor
+    processor = QueryProcessor(stop_word_path="data/stop_words_english.txt", use_stemming=True)
+
+    # Process the text query
+    processed_query = processor.process_query_text(text,exclude_tokens=exclude)
+    
+    if(processed_query == "No tokens found"):
+        return jsonify({"error":processed_query}), 400
+
+    #CALL KRISHI's function
+    ranked_documents = processor.get_ranked_documents(processed_query, True)
+
+
+    results = processor.get_recipe_from_store(ranked_documents, diet_preference)
+
+
+
+
 
     print("Text search:")
-    print("text:", text)
-    print("exclude:", exclude)
-    print("dietPreference:", diet_preference)
+    print("Processed query:", processed_query)
+    print("Diet Preference:", diet_preference)
 
-    results = [
-        {
-            "id":"unique id for recipe",
-            "title": "Dummy Text Recipe",
-            "ingredients":"list of dummy ingredients",
-            "description": "Delicious recipe found by text search: " + text,
-            "diet": "vegetarian",
-        }
-    ]
+   
     return jsonify({"results": results}), 200
+
+
+
 
 
 @app.route('/api/recipes/<recipe_id>', methods=['GET'])
