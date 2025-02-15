@@ -5,6 +5,13 @@ import datetime
 import json
 from collections import OrderedDict, defaultdict
 import logging
+from nltk.corpus import wordnet
+import nltk
+from nltk.metrics import edit_distance
+
+nltk.download('words')
+from nltk.corpus import words
+
 
 # Configure logging
 logging.basicConfig(
@@ -141,7 +148,44 @@ class QueryProcessor:
     def query_expansion_PRF(self,query):
         pass
 
+    def get_synonyms(self, word):
+        '''
+        Retrieves synonyms for a given word from WordNet.
+        Args:
+            word (str): The input word for which synonyms are needed.
 
+        Returns:
+            list: List of synonyms (cleaned and stemmed if enabled).
+        '''
+        synonyms = set()
+        for syn in wordnet.synsets(word):
+            for lemma in syn.lemmas():
+                synonym = lemma.name().replace("_", " ")  # Convert underscores to spaces
+                synonyms.add(synonym)
+
+        # Apply text cleaning and stemming
+        synonyms = [self.text_cleaner(syn) for syn in synonyms]  # Clean synonyms
+        if self.use_stemming:
+            synonyms = [self.stemmer.stemWord(syn) for syn in synonyms]  # Stem synonyms
+
+        return list(synonyms)
+    def fix_typo(self, word):
+        """
+        Fixes typos by finding the closest matching word from an English vocabulary.
+
+        Args:
+            word (str): The input word to correct.
+
+        Returns:
+            str: The corrected word (or the original if no better match is found).
+        """
+        if word in english_vocab:  # If word is correct, return it as is
+            return word
+
+        # Find the closest word using edit distance (Levenshtein Distance)
+        closest_match = min(english_vocab, key=lambda w: edit_distance(word, w))
+
+        return closest_match if edit_distance(word, closest_match) <= 2 else word  # Allow small corrections
 
     def process_query_text(self, query, exclude_tokens):
         """
@@ -174,17 +218,32 @@ class QueryProcessor:
         cleaned_query = self.text_cleaner(query)
         tokenised_query = self.text_tokenizer(cleaned_query)
 
+        # tokenised_query=[self.fix_typo(token) for token in tokenised_query]
+        # print(query)
+        # print(tokenised_query)
+
+
         if self.use_stopwords:
             tokenised_query = self.stopword_remover(tokenised_query)
+
+     # Expand query with synonyms
+        expanded_terms = []
+        print(tokenised_query)
+        for token in tokenised_query:
+            expanded_terms.extend(self.get_synonyms(token))
+
+        processed_query['synonyms'] = expanded_terms
         
         if len(tokenised_query) == 0:
             return "No tokens found" 
 
         if self.use_stemming:
             tokenised_query = self.text_stemmer(tokenised_query)
+            processed_query['synonyms']=self.text_stemmer(processed_query['synonyms'])
 
         processed_query['tokens'] = tokenised_query
         self.query_n_gram(processed_query)
+
         
 
 
@@ -205,7 +264,6 @@ class QueryProcessor:
             tokenised_query = self.text_stemmer(query)
 
         processed_query['tokens'] = tokenised_query
-
         return processed_query
 
     
@@ -235,10 +293,11 @@ class QueryProcessor:
 
 
 if __name__ == "__main__":
-    stop_words_path = "data/stop_words_english.txt"
+    english_vocab = set(words.words())
+    stop_words_path = "backend/data/stop_words_english.txt"
     processor = QueryProcessor(stop_word_path=stop_words_path, use_stemming=True)
     
-    query = 'chicken curry AND "spicy sauce" NOT tomato'
-    processed_query = processor.process_query_text(query)
+    query = 'chickn cury AND "spicy sauce" NOT tomaato'
+    processed_query = processor.process_query_text(query,[])
     
     pprint.pprint(processed_query)
