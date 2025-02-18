@@ -28,6 +28,7 @@ class QueryProcessor:
         self.use_stemming = use_stemming
         self.stop_words_set = self._load_stopwords() if use_stopwords and stop_word_path else set()
         self.stemmer = Stemmer.Stemmer("english")
+        self.field_weights = {0: 1.0, 1: 0.8, 2: 0.5}
 
     def _load_stopwords(self):
         """
@@ -210,13 +211,74 @@ class QueryProcessor:
 
     
     def get_ranked_documents(self, processed_query, isText):
-
         '''
-        ranked_documents = [
-
-        ]
+        Takes the query details as JSON, processes the search and ranks the documents.
+        Input: {
+                "original_query": query,
+                "processed_query": "", NOT REQUIRED
+                "n_grams": []  ,  # List of n-grams (e.g., bigrams, trigrams)
+                "synonyms":[],  # Synonyms to be considered (TO_DO)
+                "tokens": [],   # Tokens from the query
+                "exclude_tokens": exclude_tokens  # Tokens to exclude
+            }
         '''
+
+        # 1 - Get exclude tokens' document IDs
+        excluded = set()
+        for token in processed_query['exclude_tokens']:
+            token_found_in = self.search_index(token)
+            if token_found_in is not None:
+                excluded.add(token_found_in.keys())
+
+        # 2 - Check isText
+        if isText:
+            # 3 - isText == True
+            print("Text-based search")
+            # a. find each tokens' details and store as {token: {doc_id: {field_id: [pos1, pos2, ...]}}}
+            results = defaultdict(lambda: defaultdict(list))
+
+            for token in processed_query['tokens']:
+                token_found_in = self.search_index(token)
+                if token_found_in is not None:
+                    # get the position details of all tokens' appearance in the corpora
+                    print("tbc")
+                # use this to give weight based on if it was a token (1.0), synonym (0.8), exclude_tokens (-1.0)
+                # also give weights to each field, if field is 0 (Title) - 1.0, 1 (Ingredients) - 0.8, 2 (Steps) - 0.5
+                # using these weights and tf, idf values, calculate tfidf
+
+            # b. perform positive+negative proximity search for each n_gram
+            # for each space-separated bigram and trigram that we get in n grams, perform proximity search. if the words occur
+            # within 3 words of each other for bigrams and 5 words for trigrams, add to the tfidf score by 0.3 and 0.2
+
+        else:
+            # 4 - isText == False
+            print("Ingredients-based search")
+            # a. find each tokens' details
+            # don't do synonyms or token-type based weighting
+            # b. perform AND search
+
+            # c. get tfidf score for each doc
+
+        # 5 - sort based on tfidf score
+
         pass
+
+    def search_index(self, token):
+        """
+        This method will read from the lmdb inverted index and return list of documents that have the token,
+        the field_id and the position of the token in the inverted index.
+        Format: {doc_id: {field_id: [pos1, pos2, ...]}}
+        index is stored in lmdb
+        """
+
+        # return None if not found
+        return {2: {1: [3, 7]}} # and so on
+
+    def get_tfidf_score(self, token):
+        """
+        This method reads from the lmdb for tfidf and returns the tfidf for each document.
+        term frequencies, inverse document frequencies, number of documents are stored in lmdb
+        """
 
     def get_recipe_from_store(self, ranked_documents, diet_preference):
         
