@@ -11,6 +11,10 @@ import json
 
 from scripts.query_processor import QueryProcessor
 
+
+import logging
+logging.basicConfig(level=logging.INFO)
+
 # Setup Flask
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -27,6 +31,11 @@ db = firestore.Client.from_service_account_info(json.loads(key_json))
 users_ref = db.collection('users')
 
 # Sign-in API
+
+
+@app.route("/health")
+def health_check():
+    return "Healthy", 200
 
 @app.route('/')
 def home():
