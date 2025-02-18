@@ -15,6 +15,8 @@ Grant Access to Secret Manager in Google Cloud
 gcloud auth application-default login
 
 Build then,
+```
 docker run -p 8081:8081 \
 -v $HOME/.config/gcloud:/root/.config/gcloud \
 dishcovery-backend
+```
