@@ -126,3 +126,22 @@
     @apply text-white font-semibold;
   }
   
+  /* ======================================================
+   AUTOCOMPLETE DROPDOWN & SUGGESTIONS
+   ====================================================== */
+
+/* The container for the suggestions that drops down below the input */
+.suggestions-dropdown {
+  @apply absolute top-full left-0 w-full bg-gray-800 text-white border border-gray-500 rounded-md mt-1 z-50;
+  @apply max-h-60 overflow-y-auto; /* limit the height and allow scroll */
+}
+
+/* Each individual suggestion item */
+.suggestion-item {
+  @apply px-4 py-2 text-sm hover:bg-gray-700 cursor-pointer;
+}
+
+/* Highlighted (active) suggestion item for arrow-key navigation */
+.suggestion-item.active-suggestion {
+  @apply bg-gray-700;
+}
