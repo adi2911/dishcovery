@@ -2,25 +2,44 @@ from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
-from google.cloud import firestore
+from google.cloud import firestore, secretmanager
 import uuid
 import os
 import requests
+import json
 
-from backend.scripts.query_processor import QueryProcessor
 
+from scripts.query_processor import QueryProcessor
+
+
+import logging
+logging.basicConfig(level=logging.INFO)
 
 # Setup Flask
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 CORS(app, supports_credentials=True)
 
-# Firestore Initialization
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'firestore-key.json'
-db = firestore.Client()
+def get_firestore_credentials_from_secret():
+    client = secretmanager.SecretManagerServiceClient()
+    secret_name = "projects/230003814546/secrets/firestore-key/versions/1"
+    response = client.access_secret_version(request={"name": secret_name})
+    return response.payload.data.decode('UTF-8')
+
+key_json = get_firestore_credentials_from_secret()
+db = firestore.Client.from_service_account_info(json.loads(key_json))
 users_ref = db.collection('users')
 
 # Sign-in API
+
+
+@app.route("/health")
+def health_check():
+    return "Healthy", 200
+
+@app.route('/')
+def home():
+    return "Flask app is running!"
 
 @app.route('/api/signin', methods=['POST'])
 def signin():
