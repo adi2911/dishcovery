@@ -2,12 +2,13 @@ import axios from 'axios';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-interface Recipe {
+export interface Recipe {
   id: string;
   title: string;
   ingredients: string[];
   diet: string;
   instructions: string;
+  url:string;
 }
 
 const RecipeDetail: React.FC = () => {
@@ -75,7 +76,9 @@ const RecipeDetail: React.FC = () => {
       </ul>
       <h2 className="text-xl font-semibold mt-4 mb-2">Instructions</h2>
       <p>{recipe.instructions}</p>
-
+      <h3 className="text-xl font-semibold mt-4 mb-2">Recipe site</h3>
+      <a href='recipe.url'> VISIT RECIPE SITE</a>
+        <br/>
       <button
         className="mt-4 bg-gray-700 px-3 py-2 rounded"
         onClick={() => navigate('/')}
