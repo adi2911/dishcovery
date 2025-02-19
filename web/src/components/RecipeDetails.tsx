@@ -29,7 +29,7 @@ const RecipeDetail: React.FC = () => {
     const fetchRecipe = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`http://127.0.0.1:5000/api/recipes/${id}`);
+        const response = await axios.get(`https://backend-service-230003814546.europe-west2.run.app/api/recipes/${id}`);
         setRecipe(response.data);
         setLoading(false);
       } catch (err: any) {

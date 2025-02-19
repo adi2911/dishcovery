@@ -25,7 +25,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchCurrentUser = async () => {
     try {
-      const res = await axios.get('http://127.0.0.1:5000/api/user', { withCredentials: true });
+      const res = await axios.get('https://backend-service-230003814546.europe-west2.run.app/api/user', { withCredentials: true });
       setUser(res.data.user);
     } catch (error) {
       console.log('No active session');
@@ -34,7 +34,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     try {
-      await axios.post('http://127.0.0.1:5000/api/signout', {}, { withCredentials: true });
+      await axios.post('https://backend-service-230003814546.europe-west2.run.app/api/signout', {}, { withCredentials: true });
       setUser(null);
       console.log('User signed out successfully');
       googleLogout();
@@ -46,7 +46,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   const signIn =  useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       try {
-        const res = await axios.post('http://127.0.0.1:5000/api/signin', {
+        const res = await axios.post('https://backend-service-230003814546.europe-west2.run.app/api/signin', {
           token: tokenResponse.access_token,
         }, { withCredentials: true });
 

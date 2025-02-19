@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 ENV PYTHONPATH="."
-EXPOSE 8081
-ENV FLASK_APP=src/api/users.py
+ENV FLASK_APP=src/app.py
+EXPOSE 8080 
 
-CMD ["flask", "run", "--host=0.0.0.0", "--port=8081"]
+CMD ["sh", "-c", "python -u -m flask run --host=0.0.0.0 --port=${PORT:-8080}"]

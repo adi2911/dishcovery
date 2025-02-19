@@ -145,3 +145,9 @@
 .suggestion-item.active-suggestion {
   @apply bg-gray-700;
 }
+
+/* No results found styling */
+.no-results {
+  @apply flex items-center justify-center text-white text-2xl font-bold mt-10;
+  @apply h-40 text-center;
+}
