@@ -204,6 +204,9 @@ class QueryProcessor:
         if self.use_stemming:
             tokenised_query = self.text_stemmer(query)
 
+        if len(tokenised_query) == 0:
+            return "No tokens found" 
+        
         processed_query['tokens'] = tokenised_query
 
         return processed_query

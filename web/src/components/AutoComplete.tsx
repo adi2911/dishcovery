@@ -40,7 +40,7 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
     try {
       setLoading(true);
       const response = await axios.get(
-        `http://127.0.0.1:5000/api/autocomplete?query=${encodeURIComponent(searchTerm)}`
+        `https://backend-service-230003814546.europe-west2.run.app/api/autocomplete?query=${encodeURIComponent(searchTerm)}`
       );
       const data = response.data as string[];
       setSuggestions(data);

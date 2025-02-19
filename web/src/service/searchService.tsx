@@ -12,14 +12,14 @@ export async function performSearch(
   try {
     let response;
     if (searchType === 'ingredients') {
-      response = await axios.post('http://127.0.0.1:5000/api/searchByIngredients', {
+      response = await axios.post('https://backend-service-230003814546.europe-west2.run.app/api/searchByIngredients', {
         ingredients,
         exclude: exclusions,
         dietPreference,
       });
     } else {
       // searchType === 'text'
-      response = await axios.post('http://127.0.0.1:5000/api/searchByText', {
+      response = await axios.post('https://backend-service-230003814546.europe-west2.run.app/api/searchByText', {
         text: searchText,
         exclude: exclusions,
         dietPreference,

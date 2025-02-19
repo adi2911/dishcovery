@@ -30,6 +30,9 @@ def search_by_ingredients():
 
     processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
     processed_query = processor.process_query_ingredients(ingredients, exclude)
+    if processed_query == "No tokens found" :
+        return jsonify({"error": "No results found"}), 400
+    
     ranked_documents = processor.get_ranked_documents(processed_query, False)
     # results = processor.get_recipe_from_store(ranked_documents, diet_preference)
 
@@ -47,8 +50,8 @@ def search_by_text():
     processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
     processed_query = processor.process_query_text(text, exclude_tokens=exclude)
 
-    if processed_query == "No tokens found":
-        return jsonify({"error": processed_query}), 400
+    if processed_query == "No tokens found" :
+        return jsonify({"error": "No results found"}), 400
 
     ranked_documents = processor.get_ranked_documents(processed_query, True)
     results = processor.get_recipe_from_store(ranked_documents, diet_preference)
