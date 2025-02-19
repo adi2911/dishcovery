@@ -6,6 +6,12 @@ import json
 from collections import OrderedDict, defaultdict
 import logging
 import google.auth
+import os
+import lmdb
+import pickle
+import json
+import math
+from collections import defaultdict
 
 # Configure logging
 logging.basicConfig(
@@ -29,7 +35,11 @@ class QueryProcessor:
         self.use_stemming = use_stemming
         self.stop_words_set = self._load_stopwords() if use_stopwords and stop_word_path else set()
         self.stemmer = Stemmer.Stemmer("english")
-        self.field_weights = {0: 1.0, 1: 0.8, 2: 0.5}
+        self.FIELD_WEIGHTS = {0: 1.5, 1: 1.2, 2: 1.0}
+        self.k1 = 1.2
+        self.b = 0.75
+        self.N = 1029720  # Total number of documents
+        self.avg_doc_length = 170  # Approximate average document length (assumed)
 
     def _load_stopwords(self):
         """
@@ -222,7 +232,7 @@ class QueryProcessor:
                 "tokens": [],   # Tokens from the query
                 "exclude_tokens": exclude_tokens  # Tokens to exclude
             }
-        '''
+
 
         # 1 - Get exclude tokens' document IDs
         exclude_docs = set()
@@ -300,7 +310,51 @@ class QueryProcessor:
 
         # 6 - Return a sorted list of document IDs.
         ranked_docs = sorted(final_docs)
+        '''
+        ranked_docs = self.bm25_search(processed_query["tokens"], 100)
         return ranked_docs
+
+    def compute_idf(self, df, N):
+        """Compute Inverse Document Frequency (IDF)"""
+        return math.log((N - df + 0.5) / (df + 0.5) + 1)
+
+    # BM25 Search Function
+    def bm25_search(self, query_terms, top_n=1000):
+        """Retrieve and rank documents using BM25 with field weighting."""
+        lmdb_path = os.path.join("data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        env = lmdb.open(lmdb_path, readonly=True, subdir=False, lock=False)
+        doc_scores = defaultdict(float)  # Store BM25 scores per document
+        doc_lengths = {}  # If document lengths were stored, retrieve them
+
+        with env.begin() as txn:
+            for term in query_terms:
+                key = term.encode('utf-8')
+                data = txn.get(key)
+
+                if data:
+                    term_data = pickle.loads(data)  # {doc_id: {field_id: [positions]}}
+                    df = len(term_data)  # Document Frequency (DF)
+
+                    # Compute IDF
+                    idf = self.compute_idf(df, self.N)
+
+                    for doc_id, fields in term_data.items():
+                        for field_id, positions in fields.items():
+                            term_freq = len(positions)  # TF = Number of occurrences
+                            doc_length = doc_lengths.get(doc_id, self.avg_doc_length)  # Use avg length if unknown
+
+                            # Compute BM25 for this term in this field
+                            bm25_score = idf * ((term_freq * (self.k1 + 1)) /
+                                                (term_freq + self.k1 * (1 - b + b * (doc_length / self.avg_doc_length))))
+
+                            # Apply Field Weighting
+                            weight = self.FIELD_WEIGHTS.get(field_id, 1.0)
+                            doc_scores[doc_id] += bm25_score * weight  # Weighted score
+
+        # Sort documents by final BM25 score
+        ranked_docs = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)
+
+        return ranked_docs[:top_n]  # Return top N results
 
     def tokens_in_proximity(self, positions_lists, threshold):
         """
@@ -345,7 +399,7 @@ class QueryProcessor:
         }
         ]
         '''
-
+        print("")
         pass
 
 
