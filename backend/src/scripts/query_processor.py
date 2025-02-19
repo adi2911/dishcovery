@@ -5,6 +5,7 @@ import datetime
 import json
 from collections import OrderedDict, defaultdict
 import logging
+import google.auth
 
 # Configure logging
 logging.basicConfig(
@@ -224,44 +225,94 @@ class QueryProcessor:
         '''
 
         # 1 - Get exclude tokens' document IDs
-        excluded = set()
-        for token in processed_query['exclude_tokens']:
-            token_found_in = self.search_index(token)
-            if token_found_in is not None:
-                excluded.add(token_found_in.keys())
+        exclude_docs = set()
+        for token in processed_query.get('exclude_tokens', []):
+            token_results = self.search_index(token)
+            if token_results:
+                exclude_docs.update(token_results.keys())
 
-        # 2 - Check isText
+        # This set will store documents that match the query
+        matching_docs = set()
+
         if isText:
-            # 3 - isText == True
             print("Text-based search")
-            # a. find each tokens' details and store as {token: {doc_id: {field_id: [pos1, pos2, ...]}}}
-            results = defaultdict(lambda: defaultdict(list))
+            # a. Gather documents that contain any of the tokens.
+            for token in processed_query.get('tokens', []):
+                token_results = self.search_index(token)
+                if token_results:
+                    matching_docs.update(token_results.keys())
 
-            for token in processed_query['tokens']:
-                token_found_in = self.search_index(token)
-                if token_found_in is not None:
-                    # get the position details of all tokens' appearance in the corpora
-                    print("tbc")
-                # use this to give weight based on if it was a token (1.0), synonym (0.8), exclude_tokens (-1.0)
-                # also give weights to each field, if field is 0 (Title) - 1.0, 1 (Ingredients) - 0.8, 2 (Steps) - 0.5
-                # using these weights and tf, idf values, calculate tfidf
+            # b. Check n-grams for proximity in the documents.
+            # For each n-gram, if the tokens occur in proximity, add the document.
+            for ngram in processed_query.get('n_grams', []):
+                if len(ngram) == 2:
+                    threshold = 3
+                elif len(ngram) == 3:
+                    threshold = 5
+                else:
+                    continue
 
-            # b. perform positive+negative proximity search for each n_gram
-            # for each space-separated bigram and trigram that we get in n grams, perform proximity search. if the words occur
-            # within 3 words of each other for bigrams and 5 words for trigrams, add to the tfidf score by 0.3 and 0.2
+                docs_for_ngram = None
+                for token in ngram:
+                    token_results = self.search_index(token)
+                    if token_results:
+                        doc_ids = set(token_results.keys())
+                    else:
+                        doc_ids = set()
+                    if docs_for_ngram is None:
+                        docs_for_ngram = doc_ids
+                    else:
+                        docs_for_ngram &= doc_ids
+
+                if not docs_for_ngram:
+                    continue
+
+                for doc_id in docs_for_ngram:
+                    positions_lists = []
+                    for token in ngram:
+                        token_results = self.search_index(token)
+                        if token_results and doc_id in token_results:
+                            pos = []
+                            for pos_list in token_results[doc_id].values():
+                                pos.extend(pos_list)
+                            positions_lists.append(sorted(pos))
+
+                    if len(positions_lists) == len(ngram) and self.tokens_in_proximity(positions_lists, threshold):
+                        matching_docs.add(doc_id)
 
         else:
-            # 4 - isText == False
             print("Ingredients-based search")
-            # a. find each tokens' details
-            # don't do synonyms or token-type based weighting
-            # b. perform AND search
+            # Ingredients-based search: perform an AND search.
+            token_doc_sets = []
+            for token in processed_query.get('tokens', []):
+                token_results = self.search_index(token)
+                if token_results:
+                    token_doc_sets.append(set(token_results.keys()))
+                else:
+                    token_doc_sets.append(set())
+            if token_doc_sets:
+                matching_docs = set.intersection(*token_doc_sets)
+            else:
+                matching_docs = set()
 
-            # c. get tfidf score for each doc
+        # 5 - Remove any excluded documents.
+        final_docs = matching_docs - exclude_docs
 
-        # 5 - sort based on tfidf score
+        # 6 - Return a sorted list of document IDs.
+        ranked_docs = sorted(final_docs)
+        return ranked_docs
 
-        pass
+    def tokens_in_proximity(self, positions_lists, threshold):
+        """
+        Check if there exists a combination of positions (one from each list in positions_lists)
+        such that the difference between the smallest and largest position is within the threshold.
+        """
+        # We'll check all combinations from the first list against the min and max of subsequent lists.
+        from itertools import product
+        for combination in product(*positions_lists):
+            if max(combination) - min(combination) <= threshold:
+                return True
+        return False
 
     def search_index(self, token):
         """
@@ -279,6 +330,7 @@ class QueryProcessor:
         This method reads from the lmdb for tfidf and returns the tfidf for each document.
         term frequencies, inverse document frequencies, number of documents are stored in lmdb
         """
+        pass
 
     def get_recipe_from_store(self, ranked_documents, diet_preference):
         
@@ -293,6 +345,7 @@ class QueryProcessor:
         }
         ]
         '''
+
         pass
 
 
