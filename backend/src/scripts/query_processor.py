@@ -329,7 +329,7 @@ class QueryProcessor:
     # BM25 Search Function
     def bm25_search(self, query_terms, top_n=1000):
         """Retrieve and rank documents using BM25 with field weighting."""
-        lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        lmdb_path = os.path.join("data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
         env = lmdb.open(lmdb_path, readonly=True, subdir=False, lock=False)
         doc_scores = defaultdict(float)  # Store BM25 scores per document
         doc_lengths = {}  # If document lengths were stored, retrieve them
