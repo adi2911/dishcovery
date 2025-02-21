@@ -2,6 +2,7 @@ import pprint
 import re
 import Stemmer
 import datetime
+import time
 import json
 from collections import OrderedDict, defaultdict
 import logging
@@ -12,6 +13,12 @@ import pickle
 import json
 import math
 from collections import defaultdict
+import os
+import json
+import psycopg2
+import google.cloud.secretmanager as secretmanager
+import sqlalchemy
+from google.cloud.sql.connector import Connector
 
 # Configure logging
 logging.basicConfig(
@@ -40,6 +47,7 @@ class QueryProcessor:
         self.b = 0.75
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
+        self.PROJECT_ID = "dishcovery-449618"
 
     def _load_stopwords(self):
         """
@@ -197,7 +205,7 @@ class QueryProcessor:
 
         processed_query['tokens'] = tokenised_query
         self.query_n_gram(processed_query)
-        
+
 
 
         logging.info("Query processing completed in {}".format(datetime.datetime.now() - start_time))
@@ -321,7 +329,7 @@ class QueryProcessor:
     # BM25 Search Function
     def bm25_search(self, query_terms, top_n=1000):
         """Retrieve and rank documents using BM25 with field weighting."""
-        lmdb_path = os.path.join("data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
         env = lmdb.open(lmdb_path, readonly=True, subdir=False, lock=False)
         doc_scores = defaultdict(float)  # Store BM25 scores per document
         doc_lengths = {}  # If document lengths were stored, retrieve them
@@ -333,9 +341,10 @@ class QueryProcessor:
 
                 if data:
                     term_data = pickle.loads(data)  # {doc_id: {field_id: [positions]}}
-                    df = len(term_data)  # Document Frequency (DF)
-
+                    df = term_data["___"]  # Document Frequency (DF)
+                    term_data.pop('___', None)
                     # Compute IDF
+
                     idf = self.compute_idf(df, self.N)
 
                     for doc_id, fields in term_data.items():
@@ -345,7 +354,7 @@ class QueryProcessor:
 
                             # Compute BM25 for this term in this field
                             bm25_score = idf * ((term_freq * (self.k1 + 1)) /
-                                                (term_freq + self.k1 * (1 - b + b * (doc_length / self.avg_doc_length))))
+                                                (term_freq + self.k1 * (1 - self.b + self.b * (doc_length / self.avg_doc_length))))
 
                             # Apply Field Weighting
                             weight = self.FIELD_WEIGHTS.get(field_id, 1.0)
@@ -386,6 +395,52 @@ class QueryProcessor:
         """
         pass
 
+    def access_secret(self, secret_name: str) -> str:
+        """
+        Access the latest version of a secret from Secret Manager.
+        """
+
+        client = secretmanager.SecretManagerServiceClient()
+        secret_path = f"projects/{self.PROJECT_ID}/secrets/{secret_name}/versions/latest"
+        response = client.access_secret_version(name=secret_path)
+
+        return response.payload.data.decode("UTF-8")
+
+    def get_db_credentials(self):
+        """
+        Retrieve database credentials from Secret Manager.
+        """
+
+        db_user = "dishcovery-admin"
+        db_pass = self.access_secret("postgres-key")
+        db_name = "dishcovery"
+        db_instance = "dishcovery-449618:europe-west2:dishcovery-database"  # Should be in format project:region:instance
+        #db_instance = self.access_secret("instance-name")
+
+        return db_user, db_pass, db_name, db_instance
+
+    def get_connection(self):
+        """
+        Create a connection to the Cloud SQL PostgreSQL instance.
+        """
+        db_user, db_pass, db_name, db_instance = self.get_db_credentials()
+        # db_user = get_db_credentials()
+
+        # Cloud SQL Auth Proxy uses a Unix socket with the following pattern.
+
+        db_host = f"/cloudsql/{db_instance}"
+        connector = Connector()
+
+        conn = connector.connect(
+            db_instance,
+            "pg8000",
+            user=db_user,
+            password=db_pass,
+            db=db_name
+        )
+
+        return conn
+
     def get_recipe_from_store(self, ranked_documents, diet_preference):
         
         '''
@@ -399,15 +454,43 @@ class QueryProcessor:
         }
         ]
         '''
-        print("")
-        pass
+        start_time = time.time()
+        document_ids = [doc[0] for doc in ranked_documents]
+        query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # Fetch recipes
+        cursor.execute(query, (document_ids,))
+        mappings = cursor.fetchall()  # [(document_id, recipe_id), ...]
+
+        recipe_ids = [doc[1] for doc in mappings]
+
+        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
+        recipes = cursor.fetchall()
+
+        end_time = time.time()
+        conn.close()
+
+        return recipes, end_time - start_time
 
 
 if __name__ == "__main__":
+    start = time.time()
     stop_words_path = "data/stop_words_english.txt"
     processor = QueryProcessor(stop_word_path=stop_words_path, use_stemming=True)
     
     query = 'chicken curry AND "spicy sauce" NOT tomato'
-    processed_query = processor.process_query_text(query)
-    
+    processed_query = processor.process_query_text(query, [])
+
     pprint.pprint(processed_query)
+    docs = processor.get_ranked_documents(processed_query, True)
+    print(docs)
+    recipes, time_taken_to_get_from_data_store = processor.get_recipe_from_store(docs, 'Vegetarian')
+    print("Time taken to get from data store = " + str(time_taken_to_get_from_data_store))
+    print("Number of recipes = " + str(len(recipes)))
+    print("Search took : " + str(time.time() - start))
+
+
+
