@@ -1,0 +1,10 @@
+server {
+    listen ${PORT};
+    server_name localhost;
+
+    location / {
+        root /usr/share/nginx/html;
+        # This helps with client-side routing in single page apps
+        try_files $uri /index.html;
+    }
+}
