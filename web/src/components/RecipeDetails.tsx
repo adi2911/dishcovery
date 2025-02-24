@@ -1,6 +1,7 @@
 import axios from 'axios';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { CLOUD_RUN } from '../store/constants';
 
 export interface Recipe {
   id: string;
@@ -29,7 +30,8 @@ const RecipeDetail: React.FC = () => {
     const fetchRecipe = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`https://backend-service-230003814546.europe-west2.run.app/api/recipes/${id}`);
+        const response = await axios.get(`${CLOUD_RUN}/recipes/${id}`);
+        console.log(">>>>",response.data)
         setRecipe(response.data);
         setLoading(false);
       } catch (err: any) {

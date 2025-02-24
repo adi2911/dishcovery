@@ -1,7 +1,7 @@
 import os
 from flask import Flask
 from flask_cors import CORS
-from flask_session import Session
+# from flask_session import Session
 import logging
 
 from api.users import users_blueprint
@@ -15,7 +15,7 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = "your_secret_key"
 app.config['SESSION_TYPE'] = 'filesystem'
 CORS(app, supports_credentials=True)
-Session(app)
+# Session(app)
 
 init_trie(get_relative_path("api", "ingredients.json"))
 

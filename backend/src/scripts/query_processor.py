@@ -15,10 +15,12 @@ import math
 from collections import defaultdict
 import os
 import json
-import psycopg2
 import google.cloud.secretmanager as secretmanager
-import sqlalchemy
 from google.cloud.sql.connector import Connector
+
+from global_path import get_relative_path
+
+
 
 # Configure logging
 logging.basicConfig(
@@ -332,7 +334,8 @@ class QueryProcessor:
     # BM25 Search Function
     def bm25_search(self, query_terms, top_n=1000):
         """Retrieve and rank documents using BM25 with field weighting."""
-        lmdb_path = os.path.join("data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+
+        lmdb_path = get_relative_path("data","index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
         env = lmdb.open(lmdb_path, readonly=True, subdir=False, lock=False)
         doc_scores = defaultdict(float)  # Store BM25 scores per document
         doc_lengths = {}  # If document lengths were stored, retrieve them
@@ -444,7 +447,7 @@ class QueryProcessor:
 
         return conn
 
-    def get_recipe_from_store(self, ranked_documents, diet_preference):
+    def get_recipe_from_store(self, paged_documents, diet_preference):
         
         '''
         results = [
@@ -458,7 +461,7 @@ class QueryProcessor:
         ]
         '''
         start_time = time.time()
-        document_ids = [doc[0] for doc in ranked_documents]
+        document_ids = [doc[0] for doc in paged_documents]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
 
         conn = self.get_connection()
@@ -472,11 +475,30 @@ class QueryProcessor:
 
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
         recipes = cursor.fetchall()
+  
+
+        formatted_recipes = [
+        {
+        "id": recipe[0],
+        "url": recipe[2],
+        "title": recipe[1],
+        "ingredients": recipe[3],
+        "instructions": recipe[4]
+        }
+        for recipe in recipes
+        ]
 
         end_time = time.time()
         conn.close()
 
-        return recipes, end_time - start_time
+        return formatted_recipes, end_time - start_time
+    
+    def get_selected_recipe_from_store(self, recipe_id):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_id,)) 
+        recipe_details = cursor.fetchall() 
+        return recipe_details
 
 
 if __name__ == "__main__":

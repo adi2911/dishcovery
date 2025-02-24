@@ -4,22 +4,6 @@ from global_path import get_relative_path
 
 search_blueprint = Blueprint('search', __name__)
 
-dummy_db = {
-        "123": {
-            "id": "123",
-            "title": "Famous Vegan Chili",
-            "ingredients": ["Beans", "Tomato", "Onion", "Garlic"],
-            "diet": "vegan",
-            "instructions": "Put ingredients in pot. Stir. Simmer for 30 minutes."
-        },
-        "456": {
-            "id": "456",
-            "title": "Delicious Gluten-Free Pasta",
-            "ingredients": ["Gluten-Free Pasta", "Tomato Sauce", "Basil"],
-            "diet": "gluten-free",
-            "instructions": "Boil pasta. Add sauce. Enjoy."
-        }
-    }
 @search_blueprint.route('/searchByIngredients', methods=['POST'])
 def search_by_ingredients():
     data = request.json
@@ -53,7 +37,7 @@ def search_by_ingredients():
         paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
 
     return jsonify({
-        "results": paginated_results,
+        "results": paginated_results[0],
         "page": page,
         "per_page": per_page,
         "total_results": len(ranked_documents),
@@ -96,7 +80,8 @@ def search_by_text():
         paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
 
     return jsonify({
-        "results": paginated_results,
+        "results": paginated_results[0],
+        "time-taken": paginated_results[1],
         "page": page,
         "per_page": per_page,
         "total_results": len(ranked_documents),
@@ -106,8 +91,10 @@ def search_by_text():
 
 @search_blueprint.route('/recipes/<recipe_id>', methods=['GET'])
 def get_recipe_by_id(recipe_id):
-    recipe = dummy_db.get(recipe_id)
+    processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
+    recipe = processor.get_selected_recipe_from_store(recipe_id) 
     if recipe:
         return jsonify(recipe), 200
     else:
         return jsonify({"error": "Recipe not found"}), 404
+

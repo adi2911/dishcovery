@@ -1,6 +1,7 @@
 // AutoComplete.tsx
 import axios from 'axios';
 import React, { useEffect, useRef, useState } from 'react';
+import { CLOUD_RUN } from '../store/constants';
 
 interface AutoCompleteProps {
   onAddIngredient: (ingredient: string) => void;
@@ -40,7 +41,7 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
     try {
       setLoading(true);
       const response = await axios.get(
-        `https://backend-service-230003814546.europe-west2.run.app/api/autocomplete?query=${encodeURIComponent(searchTerm)}`
+        `${CLOUD_RUN}/autocomplete?query=${encodeURIComponent(searchTerm)}`
       );
       const data = response.data as string[];
       setSuggestions(data);
