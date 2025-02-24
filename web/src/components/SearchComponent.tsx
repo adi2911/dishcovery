@@ -1,19 +1,18 @@
-// SearchComponent.tsx
 import { Menu, Transition } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/20/solid';
 import React, { Fragment, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { performSearch } from '../service/searchService';
+import { performSearch, SearchResponse } from '../service/searchService';
+import AutoComplete from './AutoComplete';
+import { Recipe } from './RecipeDetails';
 import ResultsComponent from './ResultsComponent';
 import './SearchComponent.css';
 
-// Import the new autocomplete input
-import AutoComplete from './AutoComplete';
-import { Recipe } from './RecipeDetails';
-
 const INITIAL_VIEW = 'initial';
 const RESULT_VIEW = 'result';
-const ITEMS_PER_PAGE = 10;
+
+// We no longer rely on local slicing, but keep a default just in case
+const DEFAULT_ITEMS_PER_PAGE = 10;
 
 const SearchComponent: React.FC = () => {
   // ------------------------------ States ------------------------------
@@ -21,19 +20,20 @@ const SearchComponent: React.FC = () => {
   const [exclusions, setExclusions] = useState<string[]>([]);
   const [searchType, setSearchType] = useState<string>('text');
   const [dietPreference, setDietPreference] = useState<string>('none');
-
-  // For text-based searching
   const [searchText, setSearchText] = useState<string>('');
 
-  // For results
+  // The results array from the server
   const [results, setResults] = useState<Recipe[]>([]);
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [viewMode, setViewMode] = useState(INITIAL_VIEW);
+  // Store pagination info returned by the server
+  const [apiPerPage, setApiPerPage] = useState<number>(DEFAULT_ITEMS_PER_PAGE);
+  const [apiTotalPages, setApiTotalPages] = useState<number>(1);
 
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  const [viewMode, setViewMode] = useState(INITIAL_VIEW);
   const navigate = useNavigate();
 
   // ------------------------- Ingredient Handlers -------------------------
-  // Original "Enter" key handler
   const addIngredient = (event: React.KeyboardEvent<HTMLInputElement>) => {
     const target = event.target as HTMLInputElement;
     if (event.key === 'Enter' && target.value.trim()) {
@@ -41,12 +41,9 @@ const SearchComponent: React.FC = () => {
       target.value = '';
     }
   };
-
   const removeIngredient = (index: number) => {
     setIngredients(ingredients.filter((_, i) => i !== index));
   };
-
-  // NEW: Handler for adding an ingredient from the Autocomplete component
   const handleAddIngredientFromAutocomplete = (ingredient: string) => {
     setIngredients((prev) => [...prev, ingredient]);
   };
@@ -59,51 +56,57 @@ const SearchComponent: React.FC = () => {
       target.value = '';
     }
   };
-
   const removeExclusion = (index: number) => {
     setExclusions(exclusions.filter((_, i) => i !== index));
   };
 
   // -------------------------- Main Search Handler -----------------------
-  const handleSearch = async () => {
-    const data  = await performSearch(
+  /**
+   * Modified to accept a page parameter. Defaults to 1 if omitted.
+   * Calls the server for that page and updates state accordingly.
+   */
+  const handleSearch = async (page: number = 1) => {
+    const data: SearchResponse = await performSearch(
       searchType,
       ingredients,
       exclusions,
       dietPreference,
-      searchText
+      searchText,
+      page
     );
-    console.log("data",data)
-    setResults(data);
+
+    setResults(data.recipes);
+    setApiPerPage(data.perPage);
+    setApiTotalPages(data.totalPages);
+    setCurrentPage(data.page);
     setViewMode(RESULT_VIEW);
-    setCurrentPage(1);
+  };
+
+  // When user first clicks "Search Recipes," we reset to page=1
+  const handleInitialSearch = () => {
+    handleSearch(1);
   };
 
   // ------------------------- Pagination Logic ---------------------------
-  const totalPages = Math.ceil(results.length / ITEMS_PER_PAGE);
-  const currentStartIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const currentPageResults = results.slice(
-    currentStartIndex,
-    currentStartIndex + ITEMS_PER_PAGE
-  );
+  const totalPages = apiTotalPages;
 
-  const goToNextPage = () => {
+  const goToNextPage = async () => {
     if (currentPage < totalPages) {
-      setCurrentPage((prev) => prev + 1);
+      const nextPage = currentPage + 1;
+      await handleSearch(nextPage);
     }
   };
 
-  const goToPrevPage = () => {
+  const goToPrevPage = async () => {
     if (currentPage > 1) {
-      setCurrentPage((prev) => prev - 1);
+      const prevPage = currentPage - 1;
+      await handleSearch(prevPage);
     }
   };
 
-  // ---------------------- Navigate to Recipe Detail ----------------------
   const handleRecipeClick = (recipeId: string) => {
     navigate(`/recipe/${recipeId}`);
   };
-
   // --------------------- Conditional Rendering Logic ---------------------
   if (viewMode === INITIAL_VIEW) {
     return (
@@ -284,9 +287,9 @@ const SearchComponent: React.FC = () => {
           </div>
         </div>
 
-        {/* ============== Search Button ============== */}
-        <div className="mt-6">
-          <button className="search-btn" onClick={handleSearch}>
+         {/* Search Button */}
+         <div className="mt-6">
+          <button className="search-btn" onClick={handleInitialSearch}>
             Search Recipes
           </button>
         </div>
@@ -308,17 +311,19 @@ const SearchComponent: React.FC = () => {
         removeExclusion={removeExclusion}
         searchText={searchText}
         setSearchText={setSearchText}
-        handleSearch={handleSearch}
+        handleSearch={() => handleSearch(1)}
         results={results}
         currentPage={currentPage}
         totalPages={totalPages}
         goToNextPage={goToNextPage}
         goToPrevPage={goToPrevPage}
-        currentPageResults={currentPageResults}
+        // We simply pass `results` to the child now. 
+        // The child can display them directly, because
+        // we are requesting the correct page from the server.
+        currentPageResults={results}
         handleRecipeClick={handleRecipeClick}
       />
     );
   }
 };
-
 export default SearchComponent;
