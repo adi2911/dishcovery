@@ -31,6 +31,9 @@ docker run -p 8081:8081 \
 dishcovery-backend
 ```
 
+### Downloading lmdb index
+
+	1. gsutil -m cp -r gs://index_data_dishcovery/inverted_index_2.lmdb .
 
 ### Frontend
 
