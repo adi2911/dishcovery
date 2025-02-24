@@ -6,8 +6,8 @@ A recipe search engine.
 ### How to run locally
 1. In dishcovery/web/src/store/contants.tsx : Change ```CLOUD_RUN``` value to ``` http://127.0.0.1:8080/api```
 2. Open two terminals : a. dishcovery/backend , b. dishcovery/web
-3. In dishcovery/web: npm start
-4. In dishcovery/backend: python src/app.py
+3. In dishcovery/web: a. npm install,  b. npm start
+4. In dishcovery/backend: a. pip install -r requirements.txt, b. python src/app.py
 5. Open localhost:3000 in browser
 
 
