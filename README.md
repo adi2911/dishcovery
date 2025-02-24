@@ -32,7 +32,7 @@ dishcovery-backend
 ```
 
 ### Downloading lmdb index
-
+The index will be downloaded into the directory from which the command is executed by default. To change the destination, replace the ```.``` with your desired target location.
 	1. gsutil -m cp -r gs://index_data_dishcovery/inverted_index_2.lmdb .
 
 ### Frontend
