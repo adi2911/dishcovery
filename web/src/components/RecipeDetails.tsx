@@ -31,7 +31,6 @@ const RecipeDetail: React.FC = () => {
       try {
         setLoading(true);
         const response = await axios.get(`${CLOUD_RUN}/recipes/${id}`);
-        console.log(">>>>",response.data)
         setRecipe(response.data);
         setLoading(false);
       } catch (err: any) {
@@ -43,7 +42,6 @@ const RecipeDetail: React.FC = () => {
     fetchRecipe();
   }, [id]);
 
-  // Return states: loading, error, or success
   if (loading) {
     return <div className="text-white">Loading...</div>;
   }
@@ -59,7 +57,7 @@ const RecipeDetail: React.FC = () => {
 
   if (!recipe) {
     return (
-      <div className="text-white">
+      <div className="recipe-detail-container">
         <p>No recipe found.</p>
         <button onClick={() => navigate('/')}>Go back to search</button>
       </div>
@@ -67,7 +65,7 @@ const RecipeDetail: React.FC = () => {
   }
 
   return (
-    <div className="text-white">
+    <div className="recipe-detail-container">
       <h1 className="text-3xl font-bold mb-4">{recipe.title}</h1>
       <p><strong>Diet:</strong> {recipe.diet}</p>
       <h2 className="text-xl font-semibold mt-4 mb-2">Ingredients</h2>
@@ -79,7 +77,7 @@ const RecipeDetail: React.FC = () => {
       <h2 className="text-xl font-semibold mt-4 mb-2">Instructions</h2>
       <p>{recipe.instructions}</p>
       <h3 className="text-xl font-semibold mt-4 mb-2">Recipe site</h3>
-      <a href='recipe.url'> VISIT RECIPE SITE</a>
+      <a target="_blank" rel="noreferrer" href={recipe.url} > {recipe.url}</a>
         <br/>
       <button
         className="mt-4 bg-gray-700 px-3 py-2 rounded"

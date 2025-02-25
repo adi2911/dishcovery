@@ -93,7 +93,7 @@ def search_by_text():
 def get_recipe_by_id(recipe_id):
     processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
     recipe = processor.get_selected_recipe_from_store(recipe_id) 
-    if recipe:
+    if recipe != "No recipe found":
         return jsonify(recipe), 200
     else:
         return jsonify({"error": "Recipe not found"}), 404
