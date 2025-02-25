@@ -1,8 +1,10 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
+import { useNavigate } from 'react-router-dom';
 import { useUser } from '../store/UserContext';
 import { GoogleIcon } from './icons';
 
 const Header = () => {
+  const navigate = useNavigate()
   const { user, signIn, signOut } = useUser();
 
   const googleLogin = async () =>{
@@ -16,7 +18,7 @@ const Header = () => {
   return (
     <header className="bg-gray-900 bg-opacity-90 shadow-md text-white">
       <div className="container mx-auto flex justify-between items-center py-4 px-6">
-        <h1 className="text-3xl font-semibold">Dishcovery</h1>
+        <h1 className="text-3xl font-semibold cursor-pointer"onClick={() => navigate('/')}>Dishcovery</h1>
         <Menu as="div" className="relative">
           <MenuButton className="text-sm font-medium focus:outline-none">
             {user ? user.name : 'Profile / Sign In'}
