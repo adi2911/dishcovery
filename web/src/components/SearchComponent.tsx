@@ -1,39 +1,53 @@
+// SearchComponent.tsx
 import { Menu, Transition } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/20/solid';
-import React, { Fragment, useState } from 'react';
+import React, { Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { performSearch, SearchResponse } from '../service/searchService';
+import { useSearch } from '../store/SearchContext';
 import AutoComplete from './AutoComplete';
 import { Recipe } from './RecipeDetails';
 import ResultsComponent from './ResultsComponent';
-import './SearchComponent.css';
-
-const INITIAL_VIEW = 'initial';
-const RESULT_VIEW = 'result';
-
-// We no longer rely on local slicing, but keep a default just in case
-const DEFAULT_ITEMS_PER_PAGE = 10;
 
 const SearchComponent: React.FC = () => {
-  // ------------------------------ States ------------------------------
-  const [ingredients, setIngredients] = useState<string[]>([]);
-  const [exclusions, setExclusions] = useState<string[]>([]);
-  const [searchType, setSearchType] = useState<string>('text');
-  const [dietPreference, setDietPreference] = useState<string>('none');
-  const [searchText, setSearchText] = useState<string>('');
-
-  // The results array from the server
-  const [results, setResults] = useState<Recipe[]>([]);
-  // Store pagination info returned by the server
-  const [apiPerPage, setApiPerPage] = useState<number>(DEFAULT_ITEMS_PER_PAGE);
-  const [apiTotalPages, setApiTotalPages] = useState<number>(1);
-
-  const [currentPage, setCurrentPage] = useState<number>(1);
-
-  const [viewMode, setViewMode] = useState(INITIAL_VIEW);
   const navigate = useNavigate();
 
-  // ------------------------- Ingredient Handlers -------------------------
+  // Pull searchState + setSearchState from your custom context
+  const { searchState, setSearchState } = useSearch();
+
+  const {
+    results,
+    currentPage,
+    totalPages,
+    searchType,
+    dietPreference,
+    ingredients,
+    exclusions,
+    searchText,
+  } = searchState;
+
+  // Provide local callbacks that match (value: string) => void usage
+  const setSearchType = (newVal: string) =>
+    setSearchState((prev) => ({ ...prev, searchType: newVal }));
+  const setDietPreference = (newVal: string) =>
+    setSearchState((prev) => ({ ...prev, dietPreference: newVal }));
+  const setSearchText = (newVal: string) =>
+    setSearchState((prev) => ({ ...prev, searchText: newVal }));
+
+  // For arrays
+  const setIngredients = (ings: string[]) =>
+    setSearchState((prev) => ({ ...prev, ingredients: ings }));
+  const setExclusions = (ex: string[]) =>
+    setSearchState((prev) => ({ ...prev, exclusions: ex }));
+
+  const setResults = (recipes: Recipe[]) =>
+    setSearchState((prev) => ({ ...prev, results: recipes }));
+  const setCurrentPage = (page: number) =>
+    setSearchState((prev) => ({ ...prev, currentPage: page }));
+  const setTotalPages = (tp: number) =>
+    setSearchState((prev) => ({ ...prev, totalPages: tp }));
+
+  // Handlers for adding/removing ingredients
   const addIngredient = (event: React.KeyboardEvent<HTMLInputElement>) => {
     const target = event.target as HTMLInputElement;
     if (event.key === 'Enter' && target.value.trim()) {
@@ -44,11 +58,8 @@ const SearchComponent: React.FC = () => {
   const removeIngredient = (index: number) => {
     setIngredients(ingredients.filter((_, i) => i !== index));
   };
-  const handleAddIngredientFromAutocomplete = (ingredient: string) => {
-    setIngredients((prev) => [...prev, ingredient]);
-  };
 
-  // ------------------------- Exclusion Handlers -------------------------
+  // Handlers for exclusions
   const addExclusion = (event: React.KeyboardEvent<HTMLInputElement>) => {
     const target = event.target as HTMLInputElement;
     if (event.key === 'Enter' && target.value.trim()) {
@@ -60,12 +71,12 @@ const SearchComponent: React.FC = () => {
     setExclusions(exclusions.filter((_, i) => i !== index));
   };
 
-  // -------------------------- Main Search Handler -----------------------
-  /**
-   * Modified to accept a page parameter. Defaults to 1 if omitted.
-   * Calls the server for that page and updates state accordingly.
-   */
-  const handleSearch = async (page: number = 1) => {
+  const handleAddIngredientFromAutocomplete = (ingredient: string) => {
+    setIngredients([...ingredients, ingredient]);
+  };
+
+  // Main search function
+  const handleSearch = async (page = 1) => {
     const data: SearchResponse = await performSearch(
       searchType,
       ingredients,
@@ -74,52 +85,50 @@ const SearchComponent: React.FC = () => {
       searchText,
       page
     );
-
     setResults(data.recipes);
-    setApiPerPage(data.perPage);
-    setApiTotalPages(data.totalPages);
     setCurrentPage(data.page);
-    setViewMode(RESULT_VIEW);
+    setTotalPages(data.totalPages);
   };
 
-  // When user first clicks "Search Recipes," we reset to page=1
+  // Specifically triggers a “fresh” search at page=1
   const handleInitialSearch = () => {
     handleSearch(1);
   };
 
-  // ------------------------- Pagination Logic ---------------------------
-  const totalPages = apiTotalPages;
-
+  // Pagination
   const goToNextPage = async () => {
     if (currentPage < totalPages) {
-      const nextPage = currentPage + 1;
-      await handleSearch(nextPage);
+      await handleSearch(currentPage + 1);
     }
   };
-
   const goToPrevPage = async () => {
     if (currentPage > 1) {
-      const prevPage = currentPage - 1;
-      await handleSearch(prevPage);
+      await handleSearch(currentPage - 1);
     }
   };
 
+  // Clicking a recipe
   const handleRecipeClick = (recipeId: string) => {
     navigate(`/recipe/${recipeId}`);
   };
-  // --------------------- Conditional Rendering Logic ---------------------
-  if (viewMode === INITIAL_VIEW) {
+
+  // Decide whether to show initial or results view
+  const hasSearched = results.length > 0;
+
+  if (!hasSearched) {
     return (
       <div className="search-card">
         <h2 className="title">Recipe Search</h2>
 
-        {/* ============== Search Type Dropdown ============== */}
+        {/* -- Search Type Dropdown -- */}
         <div className="mb-6">
           <label className="label">Search Type</label>
           <Menu as="div" className="relative inline-block w-full">
             <div>
               <Menu.Button className="dropdown-button">
-                {searchType === 'text' ? 'Search by Text' : 'Search by Ingredients'}
+                {searchType === 'text'
+                  ? 'Search by Text'
+                  : 'Search by Ingredients'}
                 <ChevronDownIcon className="w-5 h-5 ml-2 inline" />
               </Menu.Button>
             </div>
@@ -158,7 +167,7 @@ const SearchComponent: React.FC = () => {
           </Menu>
         </div>
 
-        {/* ============== Diet Preference Dropdown ============== */}
+        {/* -- Diet Preference Dropdown -- */}
         <div className="mb-6">
           <label className="label">Diet Preference</label>
           <Menu as="div" className="relative inline-block w-full">
@@ -166,7 +175,8 @@ const SearchComponent: React.FC = () => {
               <Menu.Button className="dropdown-button">
                 {dietPreference === 'none'
                   ? 'No Preference'
-                  : dietPreference.charAt(0).toUpperCase() + dietPreference.slice(1)}
+                  : dietPreference.charAt(0).toUpperCase() +
+                    dietPreference.slice(1)}
                 <ChevronDownIcon className="w-5 h-5 ml-2 inline" />
               </Menu.Button>
             </div>
@@ -225,28 +235,21 @@ const SearchComponent: React.FC = () => {
           </Menu>
         </div>
 
-        {/* ============== Conditional Rendering: Text vs. Ingredients ============== */}
+        {/* -- Conditional Rendering: Text vs Ingredients -- */}
         {searchType === 'ingredients' ? (
           <div className="mb-6">
             <label className="label">Add Ingredients</label>
 
-            {/* Autocomplete Input for Ingredients */}
             <AutoComplete onAddIngredient={handleAddIngredientFromAutocomplete} />
 
-            {/* Uncomment if you want to keep the old manual input 
-            <input
-              type="text"
-              placeholder="Type an ingredient and press Enter"
-              onKeyDown={addIngredient}
-              className="input"
-            />
-            */}
-            
             <div className="ingredients-container">
               {ingredients.map((ingredient, index) => (
                 <div key={index} className="ingredient-item">
                   {ingredient}
-                  <button onClick={() => removeIngredient(index)} className="close-btn">
+                  <button
+                    onClick={() => removeIngredient(index)}
+                    className="close-btn"
+                  >
                     ✖
                   </button>
                 </div>
@@ -266,7 +269,7 @@ const SearchComponent: React.FC = () => {
           </div>
         )}
 
-        {/* ============== Exclusions ============== */}
+        {/* -- Exclusions -- */}
         <div className="mb-6">
           <label className="label">Exclude These</label>
           <input
@@ -279,7 +282,10 @@ const SearchComponent: React.FC = () => {
             {exclusions.map((ex, index) => (
               <div key={index} className="ingredient-item">
                 {ex}
-                <button onClick={() => removeExclusion(index)} className="close-btn">
+                <button
+                  onClick={() => removeExclusion(index)}
+                  className="close-btn"
+                >
                   ✖
                 </button>
               </div>
@@ -287,8 +293,8 @@ const SearchComponent: React.FC = () => {
           </div>
         </div>
 
-         {/* Search Button */}
-         <div className="mt-6">
+        {/* -- Search Button -- */}
+        <div className="mt-6">
           <button className="search-btn" onClick={handleInitialSearch}>
             Search Recipes
           </button>
@@ -296,7 +302,7 @@ const SearchComponent: React.FC = () => {
       </div>
     );
   } else {
-    // ================== Results View ==================
+    // ------------------ Results View ------------------
     return (
       <ResultsComponent
         searchType={searchType}
@@ -317,13 +323,11 @@ const SearchComponent: React.FC = () => {
         totalPages={totalPages}
         goToNextPage={goToNextPage}
         goToPrevPage={goToPrevPage}
-        // We simply pass `results` to the child now. 
-        // The child can display them directly, because
-        // we are requesting the correct page from the server.
         currentPageResults={results}
         handleRecipeClick={handleRecipeClick}
       />
     );
   }
 };
+
 export default SearchComponent;

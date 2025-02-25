@@ -1,5 +1,9 @@
+/* =========================
+   INITIAL VIEW (DARK)
+   ========================= */
    .search-card {
-    @apply bg-gray-900 bg-opacity-90 text-white shadow-lg rounded-md p-6 max-w-3xl mx-auto;
+    @apply bg-gray-900 text-gray-50 shadow-lg rounded-md p-6 max-w-3xl mx-auto font-sans;
+    /* Removed bg-opacity-90 */
   }
   
   /* A more stylish title */
@@ -13,7 +17,7 @@
   
   /* Dropdown button & menu */
   .dropdown-button {
-    @apply w-full p-2 bg-gray-700 text-white rounded-md border border-gray-500 
+    @apply w-full p-2 bg-gray-700 text-gray-50 rounded-md border border-gray-500 
              focus:outline-none focus:bg-gray-600 inline-flex items-center justify-between;
   }
   
@@ -22,12 +26,12 @@
   }
   
   .dropdown-item {
-    @apply w-full text-left px-4 py-2 text-sm text-white hover:cursor-pointer;
+    @apply w-full text-left px-4 py-2 text-sm text-gray-50 hover:cursor-pointer;
   }
   
   /* Inputs */
   .input {
-    @apply w-full p-2 bg-gray-700 text-white rounded-md border border-gray-500 
+    @apply w-full p-2 bg-gray-700 text-gray-50 rounded-md border border-gray-500 
              focus:outline-none focus:bg-gray-600 mb-4;
   }
   
@@ -37,29 +41,25 @@
   }
   
   .ingredient-item {
-    @apply bg-gray-700 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-sm;
+    @apply bg-gray-700 text-gray-50 px-4 py-2 rounded-full flex items-center gap-2 shadow-sm;
   }
   
   .close-btn {
-    @apply bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-gray-400;
+    @apply bg-gray-500 text-gray-50 rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-gray-400;
   }
   
   /* Search Button */
   .search-btn {
-    @apply w-full p-3 bg-gray-700 text-white rounded-md text-lg cursor-pointer hover:bg-gray-600 
+    @apply w-full p-3 bg-gray-700 text-gray-50 rounded-md text-lg cursor-pointer hover:bg-gray-600 
              font-semibold italic;
   }
   
   /* =========================
-     RESULTS MODE STYLES
-     (For 'viewMode' === 'results')
+     RESULTS VIEW (LIGHTER)
      ========================= */
-  
-  /* Container wrapping everything in results mode */
   .results-mode-container {
-    /* Keep the same or similar theme as .search-card for consistency */
-    /* If you want it to look like a different container, adjust as needed */
-    @apply bg-gray-900 bg-opacity-90 text-white shadow-lg rounded-md p-6 max-w-5xl mx-auto;
+    @apply bg-gray-800 text-gray-50 shadow-lg rounded-md p-6 max-w-5xl mx-auto font-sans;
+    /* Removed bg-opacity-90, made it lighter than the initial view */
   }
   
   /* The top row of filters (search type, diet preference, etc.) */
@@ -72,11 +72,11 @@
   }
   
   .filter-label {
-    @apply text-lg font-semibold italic mb-2 text-white;
+    @apply text-lg font-semibold italic mb-2 text-gray-50;
   }
   
   .filter-input {
-    @apply p-2 bg-gray-700 text-white rounded-md border border-gray-500 
+    @apply p-2 bg-gray-700 text-gray-50 rounded-md border border-gray-500 
              focus:outline-none focus:bg-gray-600;
   }
   
@@ -85,13 +85,13 @@
     @apply flex flex-wrap gap-2 mt-2;
   }
   .chips-label {
-    @apply text-white font-semibold italic;
+    @apply text-gray-50 font-semibold italic;
   }
   .chip-item {
-    @apply bg-gray-700 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-sm;
+    @apply bg-gray-700 text-gray-50 px-4 py-2 rounded-full flex items-center gap-2 shadow-sm;
   }
   .chip-close-btn {
-    @apply bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-gray-400;
+    @apply bg-gray-500 text-gray-50 rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-gray-400;
   }
   
   /* Search results list container */
@@ -101,7 +101,7 @@
   
   /* Individual result items */
   .result-item {
-    @apply bg-gray-800 text-white p-4 mb-3 rounded-md shadow-md hover:cursor-pointer 
+    @apply bg-gray-800 text-gray-50 p-4 mb-3 rounded-md shadow-md hover:cursor-pointer 
              hover:bg-gray-700 transition-colors;
   }
   .result-title {
@@ -119,35 +119,36 @@
     @apply flex items-center justify-center gap-4 mt-4;
   }
   .pagination-btn {
-    @apply bg-gray-700 text-white px-3 py-2 rounded shadow-sm hover:bg-gray-600 
+    @apply bg-gray-700 text-gray-50 px-3 py-2 rounded shadow-sm hover:bg-gray-600 
              disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .pagination-info {
-    @apply text-white font-semibold;
+    @apply text-gray-50 font-semibold;
   }
   
-  /* ======================================================
-   AUTOCOMPLETE DROPDOWN & SUGGESTIONS
-   ====================================================== */
-
-/* The container for the suggestions that drops down below the input */
-.suggestions-dropdown {
-  @apply absolute top-full left-0 w-full bg-gray-800 text-white border border-gray-500 rounded-md mt-1 z-50;
-  @apply max-h-60 overflow-y-auto; /* limit the height and allow scroll */
-}
-
-/* Each individual suggestion item */
-.suggestion-item {
-  @apply px-4 py-2 text-sm hover:bg-gray-700 cursor-pointer;
-}
-
-/* Highlighted (active) suggestion item for arrow-key navigation */
-.suggestion-item.active-suggestion {
-  @apply bg-gray-700;
-}
-
-/* No results found styling */
-.no-results {
-  @apply flex items-center justify-center text-white text-2xl font-bold mt-10;
-  @apply h-40 text-center;
-}
+  /* =========================
+     RECIPE DETAILS (LIGHTER)
+     ========================= */
+  .recipe-detail-container {
+    @apply bg-gray-800 text-gray-50 shadow-lg rounded-md p-6 max-w-5xl mx-auto font-sans;
+  }
+  
+  /* No results found styling */
+  .no-results {
+    @apply flex items-center justify-center text-gray-50 text-2xl font-bold mt-10 h-40 text-center;
+  }
+  
+  /* =========================
+     AUTOCOMPLETE
+     ========================= */
+  .suggestions-dropdown {
+    @apply absolute top-full left-0 w-full bg-gray-800 text-gray-50 border border-gray-500 rounded-md mt-1 z-50 max-h-60 overflow-y-auto;
+  }
+  
+  .suggestion-item {
+    @apply px-4 py-2 text-sm hover:bg-gray-700 cursor-pointer;
+  }
+  .suggestion-item.active-suggestion {
+    @apply bg-gray-700;
+  }
+  

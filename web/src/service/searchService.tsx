@@ -57,15 +57,15 @@ export async function performSearch(
     // Convert "results" field into a Recipe[] as before
     let recipeArray: Recipe[] = [];
     if (data.results) {
-      recipeArray = Object.entries(data.results).map(([key, value]) => {
-        const recipe = value as Omit<Recipe, 'id'>;
+      // data.results is already an array of { id, title, ingredients, ... }
+      recipeArray = data.results.map((r: any) => {
         return {
-          id: key,
-          title: recipe.title ?? '',
-          ingredients: recipe.ingredients ?? [],
-          diet: recipe.diet ?? '',
-          instructions: recipe.instructions ?? [],
-          url: recipe.url ?? '',
+          id: r.id,
+          title: r.title ?? '',
+          ingredients: r.ingredients ?? [],
+          diet: r.diet ?? '',
+          instructions: r.instructions ?? '',
+          url: r.url ?? ''
         };
       });
     }

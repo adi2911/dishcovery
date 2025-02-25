@@ -4,11 +4,12 @@ import React from 'react';
 import { Recipe } from './RecipeDetails';
 import './SearchComponent.css';
 
+
 interface ResultsComponentProps {
   searchType: string;
-  setSearchType: React.Dispatch<React.SetStateAction<string>>;
+  setSearchType: (value: string) => void;          // <-- changed
   dietPreference: string;
-  setDietPreference: React.Dispatch<React.SetStateAction<string>>;
+  setDietPreference: (value: string) => void;      // <-- changed
 
   ingredients: string[];
   addIngredient: (event: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -19,11 +20,11 @@ interface ResultsComponentProps {
   removeExclusion: (index: number) => void;
 
   searchText: string;
-  setSearchText: React.Dispatch<React.SetStateAction<string>>;
+  setSearchText: (value: string) => void;          // <-- changed
 
   handleSearch: () => void;
 
-  results: Recipe[];        // entire page of results from the server
+  results: Recipe[];
   currentPage: number;
   totalPages: number;
   goToNextPage: () => void;
@@ -68,7 +69,7 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
         <div className="filter-item">
           <label className="filter-label">Search Type</label>
           <Menu as="div" className="relative inline-block w-full">
-            {/* ...same as before... */}
+            {/* ... identical UI as before ... */}
           </Menu>
         </div>
 
@@ -76,7 +77,7 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
         <div className="filter-item">
           <label className="filter-label">Diet Preference</label>
           <Menu as="div" className="relative inline-block w-full">
-            {/* ...same as before... */}
+            {/* ... identical UI as before ... */}
           </Menu>
         </div>
 
@@ -166,7 +167,9 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
               : recipe.instructions;
           const ingredientHighlights = recipe.ingredients.slice(0, 3).join(', ');
           const ingredientsSnippet =
-            recipe.ingredients.length > 3 ? ingredientHighlights + '...' : ingredientHighlights;
+            recipe.ingredients.length > 3
+              ? ingredientHighlights + '...'
+              : ingredientHighlights;
 
           return (
             <div

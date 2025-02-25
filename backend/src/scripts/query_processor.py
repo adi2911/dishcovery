@@ -449,17 +449,6 @@ class QueryProcessor:
 
     def get_recipe_from_store(self, paged_documents, diet_preference):
         
-        '''
-        results = [
-        {
-            "id": "unique_id_2",
-            "title": "Dummy Text Recipe",
-            "ingredients": ["List of dummy ingredients"],
-            "description": "Delicious recipe found by text search: " + text,
-            "diet": "vegetarian",
-        }
-        ]
-        '''
         start_time = time.time()
         document_ids = [doc[0] for doc in paged_documents]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
@@ -496,9 +485,19 @@ class QueryProcessor:
     def get_selected_recipe_from_store(self, recipe_id):
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_id,)) 
+        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
         recipe_details = cursor.fetchall() 
-        return recipe_details
+        if len(recipe_details) != 0:
+            formatted_recipes = {
+            "id": recipe_details[0][0],
+            "url": recipe_details[0][2],
+            "title": recipe_details[0][1],
+            "ingredients": recipe_details[0][3],
+            "instructions": recipe_details[0][4]
+            }
+            return formatted_recipes
+        else:
+            return "No recipe found"
 
 
 if __name__ == "__main__":
