@@ -1,4 +1,3 @@
-// AutoComplete.tsx
 import axios from 'axios';
 import React, { useEffect, useRef, useState } from 'react';
 import { CLOUD_RUN } from '../store/constants';
@@ -12,14 +11,11 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(-1);
+  const suggestionListRef = useRef<HTMLUListElement | null>(null);
 
-  // For debouncing the API calls
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // Track which suggestion is currently "active" (highlighted)
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(-1);
-
-  // ============================ Fetching Suggestions ============================
   const fetchSuggestions = async (searchTerm: string) => {
     if (searchTerm.length < 2) {
       setSuggestions([]);
@@ -27,7 +23,6 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
       return;
     }
 
-    // 1) Check localStorage cache first
     const cacheKey = `auto_${searchTerm.toLowerCase()}`;
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
@@ -37,7 +32,6 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
       return;
     }
 
-    // 2) If not cached, make request
     try {
       setLoading(true);
       const response = await axios.get(
@@ -46,8 +40,6 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
       const data = response.data as string[];
       setSuggestions(data);
       setActiveSuggestionIndex(-1);
-
-      // 3) Cache in localStorage for next time
       localStorage.setItem(cacheKey, JSON.stringify(data));
     } catch (err) {
       console.error('Autocomplete Error:', err);
@@ -58,7 +50,6 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
     }
   };
 
-  // Debounce effect
   useEffect(() => {
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
@@ -79,15 +70,12 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
     };
   }, [query]);
 
-  // ============================ Handle Key Down ============================
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    // If no suggestions, do nothing special
     if (!suggestions.length) return;
 
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
-        // Move down the list (activeSuggestionIndex + 1)
         setActiveSuggestionIndex((prevIndex) => {
           const nextIndex = prevIndex + 1;
           return nextIndex >= suggestions.length ? 0 : nextIndex;
@@ -96,7 +84,6 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
 
       case 'ArrowUp':
         event.preventDefault();
-        // Move up the list (activeSuggestionIndex - 1)
         setActiveSuggestionIndex((prevIndex) => {
           const nextIndex = prevIndex - 1;
           return nextIndex < 0 ? suggestions.length - 1 : nextIndex;
@@ -105,14 +92,11 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
 
       case 'Enter':
         event.preventDefault();
-        // If we have a valid active index, pick that item
         if (activeSuggestionIndex >= 0 && activeSuggestionIndex < suggestions.length) {
           onAddIngredient(suggestions[activeSuggestionIndex]);
-        } else {
-          // If no valid active index, but we do have suggestions, pick the first
+        } else if (suggestions.length > 0) {
           onAddIngredient(suggestions[0]);
         }
-        // Clear everything
         setQuery('');
         setShowSuggestions(false);
         setSuggestions([]);
@@ -124,15 +108,22 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
     }
   };
 
-  // ============================ Handle Input Change ============================
+  useEffect(() => {
+    if (suggestionListRef.current && activeSuggestionIndex >= 0) {
+      const activeItem = suggestionListRef.current.children[activeSuggestionIndex] as HTMLElement;
+      if (activeItem) {
+        activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+  }, [activeSuggestionIndex]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setQuery(e.target.value);
     setShowSuggestions(true);
     setActiveSuggestionIndex(-1);
   };
 
-  // ============================ Click on a suggestion ============================
-  const handleSuggestionClick = (suggestion: string, index: number) => {
+  const handleSuggestionClick = (suggestion: string) => {
     onAddIngredient(suggestion);
     setQuery('');
     setShowSuggestions(false);
@@ -140,7 +131,6 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
     setActiveSuggestionIndex(-1);
   };
 
-  // ============================ Render ============================
   return (
     <div style={{ position: 'relative' }}>
       <input
@@ -154,19 +144,16 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
       {loading && <div className="loading-spinner">Loading...</div>}
 
       {showSuggestions && suggestions.length > 0 && (
-        <ul className="suggestions-dropdown">
-          {suggestions.map((item, index) => {
-            const isActive = index === activeSuggestionIndex;
-            return (
-              <li
-                key={index}
-                onClick={() => handleSuggestionClick(item, index)}
-                className={`suggestion-item ${isActive ? 'active-suggestion' : ''}`}
-              >
-                {item}
-              </li>
-            );
-          })}
+        <ul className="suggestions-dropdown" ref={suggestionListRef}>
+          {suggestions.map((item, index) => (
+            <li
+              key={index}
+              onClick={() => handleSuggestionClick(item)}
+              className={`suggestion-item ${index === activeSuggestionIndex ? 'active-suggestion' : ''}`}
+            >
+              {item}
+            </li>
+          ))}
         </ul>
       )}
     </div>

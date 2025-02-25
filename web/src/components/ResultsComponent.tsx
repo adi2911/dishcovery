@@ -1,15 +1,16 @@
 // ResultsComponent.tsx
 import { Menu } from '@headlessui/react';
 import React from 'react';
+import { useSearch } from '../store/SearchContext'; // <== We use setSearchState here
+import AutoComplete from './AutoComplete'; // Import the AutoComplete
 import { Recipe } from './RecipeDetails';
-import './SearchComponent.css';
-
+import './SearchComponent.css'; // Keep the original stylesheet
 
 interface ResultsComponentProps {
   searchType: string;
-  setSearchType: (value: string) => void;          // <-- changed
+  setSearchType: (value: string) => void;
   dietPreference: string;
-  setDietPreference: (value: string) => void;      // <-- changed
+  setDietPreference: (value: string) => void;
 
   ingredients: string[];
   addIngredient: (event: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -20,7 +21,7 @@ interface ResultsComponentProps {
   removeExclusion: (index: number) => void;
 
   searchText: string;
-  setSearchText: (value: string) => void;          // <-- changed
+  setSearchText: (value: string) => void;
 
   handleSearch: () => void;
 
@@ -61,39 +62,133 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
   currentPageResults,
   handleRecipeClick,
 }) => {
+  // Bring in setSearchState from our custom SearchContext
+  const { setSearchState } = useSearch();
+
+  // Clear search method that resets the global state
+  const clearSearch = () => {
+    setSearchState((prev) => ({
+      ...prev,
+      results: [],
+      currentPage: 1,
+      totalPages: 1,
+      searchText: '',
+      ingredients: [],
+      exclusions: [],
+      searchType: 'text',
+      dietPreference: 'none',
+    }));
+  };
+
   return (
     <div className="results-mode-container text-white p-4">
-      {/* -- Top row: same as before, allowing user to refine and re-search -- */}
-      <div className="top-filters flex flex-wrap items-end gap-4 mb-6">
-        {/* Search Type Dropdown */}
-        <div className="filter-item">
+      <div className="top-filters flex flex-wrap items-start gap-4 mb-6">
+        <div className="filter-item flex flex-col">
           <label className="filter-label">Search Type</label>
           <Menu as="div" className="relative inline-block w-full">
-            {/* ... identical UI as before ... */}
+            <Menu.Button className="dropdown-button">
+              {searchType === 'text' ? 'Search by Text' : 'Search by Ingredients'}
+            </Menu.Button>
+            <Menu.Items className="dropdown-menu">
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    className={`dropdown-item ${active ? 'bg-gray-600' : ''}`}
+                    onClick={() => setSearchType('text')}
+                  >
+                    Search by Text
+                  </button>
+                )}
+              </Menu.Item>
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    className={`dropdown-item ${active ? 'bg-gray-600' : ''}`}
+                    onClick={() => setSearchType('ingredients')}
+                  >
+                    Search by Ingredients
+                  </button>
+                )}
+              </Menu.Item>
+            </Menu.Items>
           </Menu>
         </div>
 
         {/* Diet Preference Dropdown */}
-        <div className="filter-item">
+        <div className="filter-item flex flex-col">
           <label className="filter-label">Diet Preference</label>
           <Menu as="div" className="relative inline-block w-full">
-            {/* ... identical UI as before ... */}
+            <Menu.Button className="dropdown-button">
+              {dietPreference === 'none'
+                ? 'No Preference'
+                : dietPreference.charAt(0).toUpperCase() + dietPreference.slice(1)}
+            </Menu.Button>
+            <Menu.Items className="dropdown-menu">
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    className={`dropdown-item ${active ? 'bg-gray-600' : ''}`}
+                    onClick={() => setDietPreference('none')}
+                  >
+                    No Preference
+                  </button>
+                )}
+              </Menu.Item>
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    className={`dropdown-item ${active ? 'bg-gray-600' : ''}`}
+                    onClick={() => setDietPreference('vegan')}
+                  >
+                    Vegan
+                  </button>
+                )}
+              </Menu.Item>
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    className={`dropdown-item ${active ? 'bg-gray-600' : ''}`}
+                    onClick={() => setDietPreference('vegetarian')}
+                  >
+                    Vegetarian
+                  </button>
+                )}
+              </Menu.Item>
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    className={`dropdown-item ${active ? 'bg-gray-600' : ''}`}
+                    onClick={() => setDietPreference('gluten-free')}
+                  >
+                    Gluten-Free
+                  </button>
+                )}
+              </Menu.Item>
+            </Menu.Items>
           </Menu>
         </div>
 
         {/* Conditional: Ingredients vs Text */}
         {searchType === 'ingredients' ? (
-          <div className="filter-item">
+          <div className="filter-item flex flex-col">
             <label className="filter-label">Ingredients</label>
-            <input
-              type="text"
-              placeholder="Enter ingredient, press Enter"
-              className="filter-input"
-              onKeyDown={addIngredient}
+            {/* Use AutoComplete just like in SearchComponent */}
+            <AutoComplete
+              onAddIngredient={(ingredient) => {
+                if (ingredient.trim()) {
+                  // Create a synthetic keydown event for addIngredient()
+                  const syntheticEvent = {
+                    key: 'Enter',
+                    target: { value: ingredient },
+                    preventDefault: () => {},
+                  } as unknown as React.KeyboardEvent<HTMLInputElement>;
+                  addIngredient(syntheticEvent);
+                }
+              }}
             />
           </div>
         ) : (
-          <div className="filter-item">
+          <div className="filter-item flex flex-col">
             <label className="filter-label">Search Text</label>
             <input
               type="text"
@@ -106,7 +201,7 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
         )}
 
         {/* Exclusions */}
-        <div className="filter-item">
+        <div className="filter-item flex flex-col">
           <label className="filter-label">Exclusions</label>
           <input
             type="text"
@@ -116,15 +211,42 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
           />
         </div>
 
-        {/* Re-Search button */}
-        <div className="filter-item">
+        {/* Re-Search Button */}
+        <div className="filter-item flex flex-col">
+          <label className="filter-label" style={{ visibility: 'hidden' }}>
+            &nbsp;
+          </label>
           <button className="search-btn" onClick={handleSearch}>
             Search
           </button>
         </div>
+
+        {/* Summary: plain text info */}
+        <div className="filter-item flex flex-col">
+          <label className="filter-label" style={{ visibility: 'hidden' }}>
+            &nbsp;
+          </label>
+          <span className="text-sm text-gray-300">
+            {searchType === 'text'
+              ? `Searched for text: ${searchText || '(none)'}`
+              : `Searched for ingredients: ${
+                  ingredients.length > 0 ? ingredients.join(', ') : '(none)'
+                }`}
+          </span>
+        </div>
+
+        {/* Clear Search Button (New) */}
+        <div className="filter-item flex flex-col">
+          <label className="filter-label" style={{ visibility: 'hidden' }}>
+            &nbsp;
+          </label>
+          <button className="clear-btn" onClick={clearSearch}>
+            Clear Search
+          </button>
+        </div>
       </div>
 
-      {/* Show chips for Ingredients + Exclusions (same as before) */}
+      {/* Show chips for Ingredients + Exclusions */}
       {searchType === 'ingredients' && ingredients.length > 0 && (
         <div className="chips-row">
           <strong className="chips-label">Ingredients:</strong>
@@ -141,6 +263,7 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
           ))}
         </div>
       )}
+
       {exclusions.length > 0 && (
         <div className="chips-row">
           <strong className="chips-label">Exclusions:</strong>

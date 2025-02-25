@@ -21,6 +21,18 @@ const RecipeDetail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const handleBackNavigation = () => {
+      navigate(-1); 
+    };
+
+    window.addEventListener('popstate', handleBackNavigation);
+    
+    return () => {
+      window.removeEventListener('popstate', handleBackNavigation);
+    };
+  }, [navigate]);
+
+  useEffect(() => {
     if (!id) {
       setError('No recipe ID provided');
       setLoading(false);
