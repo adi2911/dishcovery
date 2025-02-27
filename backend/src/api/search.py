@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, session, current_app as app
+
 from scripts.query_processor import QueryProcessor
 from global_path import get_relative_path
 
