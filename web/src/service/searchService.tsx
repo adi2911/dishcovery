@@ -48,8 +48,9 @@ export async function performSearch(
      */
     const response = await axios.post(url, requestData, {
       params: {
-        page,   // <--- send page as a query parameter
+        page,
       },
+      withCredentials: true,
     });
 
     const data = response.data;
