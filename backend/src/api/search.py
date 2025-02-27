@@ -63,7 +63,7 @@ def search_by_text():
         return jsonify({"error": "No results found"}), 400
 
     # recalculate the ranked documents for each page request
-    ranked_documents = processor.get_ranked_documents(processed_query, False)
+    ranked_documents = processor.get_ranked_documents(processed_query, True)
     paginated_ranked_documents = ranked_documents[start_idx:end_idx]
     paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
 
