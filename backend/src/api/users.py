@@ -3,6 +3,9 @@ from google.cloud import firestore, secretmanager
 import uuid
 import json
 import requests
+import warnings
+
+warnings.filterwarnings("ignore", message="Your application has authenticated using end user credentials from Google Cloud SDK without a quota project.")
 
 users_blueprint = Blueprint('users', __name__)
 
