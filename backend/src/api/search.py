@@ -1,3 +1,5 @@
+import logging
+
 from flask import Blueprint, request, jsonify, session
 from scripts.query_processor import QueryProcessor
 from global_path import get_relative_path
@@ -24,17 +26,10 @@ def search_by_ingredients():
     processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
     processed_query = processor.process_query_ingredients(ingredients, exclude)
 
-    # If first page request, process the search and store results in session
-    # If not, retrieve ranked documents from session
-    if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, False)
-        paginated_ranked_documents = ranked_documents[start_idx:end_idx]
-        paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
-        session['ranked_documents'] = ranked_documents  # Store the retrieved ranked documents in session
-    else:
-        ranked_documents = session.get('ranked_documents', [])
-        paginated_ranked_documents = ranked_documents[start_idx:end_idx]
-        paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
+    # recalculate the ranked documents for each page request
+    ranked_documents = processor.get_ranked_documents(processed_query, False)
+    paginated_ranked_documents = ranked_documents[start_idx:end_idx]
+    paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
 
     return jsonify({
         "results": paginated_results[0],
@@ -67,17 +62,10 @@ def search_by_text():
     if processed_query == "No tokens found" :
         return jsonify({"error": "No results found"}), 400
 
-    # If first page request, process search and store results in session
-    # If not, retrieve ranked documents from session
-    if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, False)
-        paginated_ranked_documents = ranked_documents[start_idx:end_idx]
-        paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
-        session['ranked_documents'] = ranked_documents  # Store the retrieved ranked documents in session
-    else:
-        ranked_documents = session.get('ranked_documents', [])
-        paginated_ranked_documents = ranked_documents[start_idx:end_idx]
-        paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
+    # recalculate the ranked documents for each page request
+    ranked_documents = processor.get_ranked_documents(processed_query, False)
+    paginated_ranked_documents = ranked_documents[start_idx:end_idx]
+    paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
 
     return jsonify({
         "results": paginated_results[0],
