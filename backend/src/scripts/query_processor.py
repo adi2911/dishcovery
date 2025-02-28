@@ -49,6 +49,7 @@ class QueryProcessor:
         self.avg_doc_length = 170  # Approximate average document length (assumed)
         self.lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
         self.PROJECT_ID = "dishcovery-449618"
+        self.conn = self.get_connection()
 
     def _load_stopwords(self):
         """
@@ -479,11 +480,10 @@ class QueryProcessor:
 
     def get_recipe_from_store(self, paged_documents, diet_preference):
 
-        start_time = time.time()
         document_ids = [doc[0] for doc in paged_documents]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
 
-        conn = self.get_connection()
+        conn = self.conn
         cursor = conn.cursor()
 
         # Fetch recipes
@@ -494,7 +494,6 @@ class QueryProcessor:
 
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
         recipes = cursor.fetchall()
-
         formatted_recipes = [
             {
                 "id": recipe[0],
@@ -506,13 +505,10 @@ class QueryProcessor:
             for recipe in recipes
         ]
 
-        end_time = time.time()
-        conn.close()
-
-        return formatted_recipes, end_time - start_time
-
+        return formatted_recipes
+    
     def get_selected_recipe_from_store(self, recipe_id):
-        conn = self.get_connection()
+        conn = self.conn
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
         recipe_details = cursor.fetchall()
