@@ -47,7 +47,7 @@ class QueryProcessor:
         self.b = 0.75
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
-        self.lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        self.lmdb_path = os.path.join("/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
 
