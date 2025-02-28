@@ -47,7 +47,7 @@ class QueryProcessor:
         self.b = 0.75
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
-        self.lmdb_path = os.path.join("/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        self.lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
         self.PROJECT_ID = "dishcovery-449618"
 
     def _load_stopwords(self):
@@ -300,10 +300,11 @@ class QueryProcessor:
             ]
 
             matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
-            print(matching_docs)
+
+
 
         final_docs = matching_docs - exclude_docs
-        bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 100))
+        bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
         tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"]))
 
         # This could be used for normalising and using all three scores?
@@ -314,7 +315,7 @@ class QueryProcessor:
         max_tfidf = max(tfidf_scores.values(), default=1)
         min_tfidf = min(tfidf_scores.values(), default=0)
 
-        bm25_weight, tfidf_weight = 0.5, 0.3
+        bm25_weight, tfidf_weight = 0.5, 0.0
         proximity_weight = 1 - (bm25_weight + tfidf_weight)
 
         ranked_docs = {
