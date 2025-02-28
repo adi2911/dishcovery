@@ -306,7 +306,7 @@ class QueryProcessor:
 
         final_docs = matching_docs - exclude_docs
         bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
-        tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"]))
+        tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
 
         # This could be used for normalising and using all three scores?
         max_prox = max(proximity_scores.values(), default=1)
@@ -327,7 +327,7 @@ class QueryProcessor:
         }
 
         #ranked_docs = dict(self.bm25_search(final_docs, processed_query["tokens"], 100))
-        return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)
+        return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
 
     def compute_idf(self, df, N):
         """Compute Inverse Document Frequency (IDF)"""
