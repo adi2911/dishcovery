@@ -11,3 +11,4 @@ redis
 flask_session
 lmdb
 cloud-sql-python-connector
+redis==4.5.5

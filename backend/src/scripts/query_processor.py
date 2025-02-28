@@ -17,6 +17,7 @@ import os
 import json
 import google.cloud.secretmanager as secretmanager
 from google.cloud.sql.connector import Connector
+from cache_utils import QueryCache, DocCache
 
 from global_path import get_relative_path
 
@@ -39,6 +40,10 @@ class QueryProcessor:
             use_stopwords (bool, optional): Whether to remove stopwords (default: True)
             use_stemming (bool, optional): Whether to apply stemming (default: True)
         """
+        #500 MB LRU for query-level cache on default DB=0
+        self.query_cache = QueryCache(max_memory_bytes=524288000, do_config_set=True)
+        #500 MB LRU for doc-level cache on DB=1
+        self.doc_cache = DocCache(db=1, max_memory_bytes=524288000, do_config_set=True)
         self.stop_word_path = stop_word_path
         self.use_stopwords = use_stopwords
         self.use_stemming = use_stemming
@@ -234,6 +239,14 @@ class QueryProcessor:
         return processed_query
 
     
+    def make_query_cache_dict(self, processed_query, is_text):
+        return {
+            "tokens": processed_query.get("tokens", []),
+            "exclude": processed_query.get("exclude_tokens", []),
+            "n_grams": processed_query.get("n_grams", []),
+            "isText": is_text
+        }
+        
     def get_ranked_documents(self, processed_query, isText):
         '''
         Takes the query details as JSON, processes the search and ranks the documents.
@@ -324,7 +337,21 @@ class QueryProcessor:
         # 6 - Return a sorted list of document IDs.
         ranked_docs = sorted(final_docs)
         '''
+        '''ranked_docs = self.bm25_search(processed_query["tokens"], 100)
+        return ranked_docs'''
+        
+        #Build a dictionary for cache key
+        query_cache_dict = self.make_query_cache_dict(processed_query, isText)
+        #Check in query cache
+        cached_result = self.query_cache.get(query_cache_dict)
+        if cached_result is not None:
+            logging.info("QUERY-LEVEL CACHE HIT! Returning cached doc list.")
+            return cached_result
+        logging.info("QUERY-LEVEL CACHE MISS. Running BM25.")
+        #If MISS, run BM25
         ranked_docs = self.bm25_search(processed_query["tokens"], 100)
+        #Store in query cache
+        self.query_cache.set(query_cache_dict, ranked_docs)
         return ranked_docs
 
     def compute_idf(self, df, N):
@@ -461,41 +488,63 @@ class QueryProcessor:
         mappings = cursor.fetchall()  # [(document_id, recipe_id), ...]
 
         recipe_ids = [doc[1] for doc in mappings]
+        final_recipes = []
+        missing_recipe_ids = []
+        
+        #check doc cache for each recipe_id
+        for rid in recipe_ids:
+            cached_doc = self.doc_cache.get_doc(rid)
+            if cached_doc:
+                logging.info(f"Doc-level cache HIT for recipe_id={rid}")
+                final_recipes.append(cached_doc)
+            else:
+                missing_recipe_ids.append(rid)
 
-        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
-        recipes = cursor.fetchall()
-  
+         #if some recipe_ids are missing, fetch them from the DB
+        if missing_recipe_ids:
+            cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (missing_recipe_ids,))
+            db_recipes = cursor.fetchall()
 
-        formatted_recipes = [
-        {
-        "id": recipe[0],
-        "url": recipe[2],
-        "title": recipe[1],
-        "ingredients": recipe[3],
-        "instructions": recipe[4]
-        }
-        for recipe in recipes
-        ]
+            for r in db_recipes:
+                recipe_dict = {
+                    "id": r[0],
+                    "url": r[2],
+                    "title": r[1],
+                    "ingredients": r[3],
+                    "instructions": r[4]
+                }
+                # store in doc cache
+                self.doc_cache.set_doc(r[0], recipe_dict)
+                final_recipes.append(recipe_dict)
 
         end_time = time.time()
         conn.close()
 
-        return formatted_recipes, end_time - start_time
+        return final_recipes, end_time - start_time
     
     def get_selected_recipe_from_store(self, recipe_id):
+        #check doc cache
+        cached = self.doc_cache.get_doc(recipe_id)
+        if cached:
+            logging.info(f"Single-recipe doc cache HIT for recipe_id={recipe_id}")
+            return cached
+        
+        # otherwise fetch from DB
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
         recipe_details = cursor.fetchall() 
         if len(recipe_details) != 0:
-            formatted_recipes = {
-            "id": recipe_details[0][0],
-            "url": recipe_details[0][2],
-            "title": recipe_details[0][1],
-            "ingredients": recipe_details[0][3],
-            "instructions": recipe_details[0][4]
+            row = recipe_details[0]
+            recipe_dict = {
+            "id": row[0],
+            "url": row[2],
+            "title": row[1],
+            "ingredients": row[3],
+            "instructions": row[4]
             }
-            return formatted_recipes
+            self.doc_cache.set_doc(row[0], recipe_dict)
+            return recipe_dict
         else:
             return "No recipe found"
 
