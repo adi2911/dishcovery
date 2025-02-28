@@ -47,7 +47,8 @@ class QueryProcessor:
         self.b = 0.75
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
-        self.lmdb_path = os.path.join("/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        #self.lmdb_path = os.path.join("/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        self.lmdb_path = get_relative_path("data","index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
 
@@ -335,7 +336,6 @@ class QueryProcessor:
 
     # BM25 Search Function
     def bm25_search(self, doc_set, query_terms, top_n=100):
-        #lmdb_path = get_relative_path("data", "inverted_index.lmdb/data.mdb")
         env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
         doc_scores = defaultdict(float)
         doc_lengths = {}
@@ -371,8 +371,7 @@ class QueryProcessor:
         return (1 + math.log10(tf)) * math.log10(N / df)
 
     def tfidf_search(self, doc_set, query_terms, top_n=10):
-        lmdb_path = get_relative_path("data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
-        env = lmdb.open(lmdb_path, readonly=True, subdir=False, lock=False)
+        env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
         doc_scores = defaultdict(float)
 
         with env.begin() as txn:
