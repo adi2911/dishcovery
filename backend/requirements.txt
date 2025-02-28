@@ -11,3 +11,4 @@ redis
 flask_session
 lmdb
 cloud-sql-python-connector
+pg8000
