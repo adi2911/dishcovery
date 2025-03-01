@@ -63,7 +63,7 @@ def search_by_text():
         return jsonify({"error": "No results found"}), 400
 
     # recalculate the ranked documents for each page request
-    ranked_documents = processor.get_ranked_documents(processed_query, False)
+    ranked_documents = processor.get_ranked_documents(processed_query, True)
     paginated_ranked_documents = ranked_documents[start_idx:end_idx]
     paginated_results = processor.get_recipe_from_store(paginated_ranked_documents, diet_preference)
 
@@ -80,7 +80,7 @@ def search_by_text():
 @search_blueprint.route('/recipes/<recipe_id>', methods=['GET'])
 def get_recipe_by_id(recipe_id):
     processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
-    recipe = processor.get_selected_recipe_from_store(recipe_id) 
+    recipe = processor.get_selected_recipe_from_store(recipe_id)
     if recipe != "No recipe found":
         return jsonify(recipe), 200
     else:

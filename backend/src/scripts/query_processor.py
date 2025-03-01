@@ -52,8 +52,8 @@ class QueryProcessor:
         self.b = 0.75
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
-        # self.lmdb_path = os.path.join("/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
-        self.lmdb_path = get_relative_path("data", "index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
+        self.lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        #self.lmdb_path = get_relative_path("data", "index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
 
@@ -271,10 +271,11 @@ class QueryProcessor:
         cached_result = self.query_cache.get(query_cache_dict)
         if cached_result is not None:
             logging.info("QUERY-LEVEL CACHE HIT! Returning cached doc list.")
-            return cached_result
+            x = sorted(cached_result.items(), key=lambda x: x[1], reverse=True)[:1000]
+            return x
 
         # logging.info("QUERY-LEVEL CACHE MISS. Running BM25.")
-
+        print("Reached THIS")
         # 1 - Get exclude tokens' document IDs
         exclude_docs = set()
         print(processed_query)
@@ -351,7 +352,7 @@ class QueryProcessor:
         }
         # Store in query cache
         self.query_cache.set(query_cache_dict, ranked_docs)
-        return ranked_docs
+        return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
 
     def compute_idf(self, df, N):
         """Compute Inverse Document Frequency (IDF)"""
@@ -501,7 +502,7 @@ class QueryProcessor:
         return conn
 
     def get_recipe_from_store(self, paged_documents, diet_preference):
-
+        start_time = time.time()
         document_ids = [doc[0] for doc in paged_documents]
         # [(document_id, recipe_id), ...]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
@@ -514,67 +515,66 @@ class QueryProcessor:
         mappings = cursor.fetchall()
         recipe_ids = [doc[1] for doc in mappings]
 
-    final_recipes = []
-    missing_recipe_ids = []
-    # check doc cache for each recipe_id
-    for rid in recipe_ids:
-        cached_doc = self.doc_cache.get_doc(rid)
-        if cached_doc:
-            logging.info(f"Doc-level cache HIT for recipe_id={rid}")
-            final_recipes.append(cached_doc)
-        else:
-            missing_recipe_ids.append(rid)
+        final_recipes = []
+        missing_recipe_ids = []
+        # check doc cache for each recipe_id
+        for rid in recipe_ids:
+            cached_doc = self.doc_cache.get_doc(rid)
+            if cached_doc:
+                logging.info(f"Doc-level cache HIT for recipe_id={rid}")
+                final_recipes.append(cached_doc)
+            else:
+                missing_recipe_ids.append(rid)
 
-    # if some recipe_ids are missing, fetch them from the DB
-    if missing_recipe_ids:
-        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (missing_recipe_ids,))
-        db_recipes = cursor.fetchall()
+        # if some recipe_ids are missing, fetch them from the DB
+        if missing_recipe_ids:
+            cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (missing_recipe_ids,))
+            db_recipes = cursor.fetchall()
 
-        for r in db_recipes:
+            for r in db_recipes:
+                recipe_dict = {
+                    "id": r[0],
+                    "url": r[2],
+                    "title": r[1],
+                    "ingredients": r[3],
+                    "instructions": r[4]
+                }
+                # store in doc cache
+                self.doc_cache.set_doc(r[0], recipe_dict)
+                final_recipes.append(recipe_dict)
+
+        end_time = time.time()
+        conn.close()
+
+        return final_recipes, end_time - start_time
+
+
+    def get_selected_recipe_from_store(self, recipe_id):
+        # check doc cache
+        cached = self.doc_cache.get_doc(recipe_id)
+        if cached:
+            logging.info(f"Single-recipe doc cache HIT for recipe_id={recipe_id}")
+            return cached
+
+        # otherwise fetch from DB
+        conn = self.conn
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
+        recipe_details = cursor.fetchall()
+        if len(recipe_details) != 0:
+            row = recipe_details[0]
             recipe_dict = {
-                "id": r[0],
-                "url": r[2],
-                "title": r[1],
-                "ingredients": r[3],
-                "instructions": r[4]
-            }
-            # store in doc cache
-            self.doc_cache.set_doc(r[0], recipe_dict)
-            final_recipes.append(recipe_dict)
-
-    end_time = time.time()
-    conn.close()
-
-    return final_recipes, end_time - start_time
-
-
-def get_selected_recipe_from_store(self, recipe_id):
-    # check doc cache
-    cached = self.doc_cache.get_doc(recipe_id)
-    if cached:
-        logging.info(f"Single-recipe doc cache HIT for recipe_id={recipe_id}")
-        return cached
-
-    # otherwise fetch from DB
-    conn = self.conn
-
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
-    recipe_details = cursor.fetchall()
-    if len(recipe_details) != 0:
-        row = recipe_details[0]
-        recipe_dict = {
             "id": row[0],
             "url": row[2],
             "title": row[1],
             "ingredients": row[3],
             "instructions": row[4]
-        }
-        self.doc_cache.set_doc(row[0], recipe_dict)
-        return recipe_dict
-    else:
-        return "No recipe found"
-
+            }
+            self.doc_cache.set_doc(row[0], recipe_dict)
+            return recipe_dict
+        else:
+            return "No recipe found"
 
 if __name__ == "__main__":
     start = time.time()
