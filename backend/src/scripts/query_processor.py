@@ -39,9 +39,9 @@ class QueryProcessor:
             use_stemming (bool, optional): Whether to apply stemming (default: True)
         """
         # 500 MB LRU for query-level cache on default DB=0
-        self.query_cache = QueryCache(max_memory_bytes=524288000, do_config_set=True)
+        #self.query_cache = QueryCache(max_memory_bytes=524288000, do_config_set=True)
         # 500 MB LRU for doc-level cache on DB=1
-        self.doc_cache = DocCache(db=1, max_memory_bytes=524288000, do_config_set=True)
+        #self.doc_cache = DocCache(db=1, max_memory_bytes=524288000, do_config_set=True)
         self.stop_word_path = stop_word_path
         self.use_stopwords = use_stopwords
         self.use_stemming = use_stemming
@@ -52,8 +52,8 @@ class QueryProcessor:
         self.b = 0.75
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
-        self.lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
-        #self.lmdb_path = get_relative_path("data", "index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
+        #self.lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
+        self.lmdb_path = get_relative_path("data", "index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
 
@@ -237,13 +237,13 @@ class QueryProcessor:
 
         return processed_query
 
-    def make_query_cache_dict(self, processed_query, is_text):
+    '''def make_query_cache_dict(self, processed_query, is_text):
         return {
             "tokens": processed_query.get("tokens", []),
             "exclude": processed_query.get("exclude_tokens", []),
             "n_grams": processed_query.get("n_grams", []),
             "isText": is_text
-        }
+        }'''
 
     def get_ranked_documents(self, processed_query, isText):
         '''
@@ -266,30 +266,32 @@ class QueryProcessor:
         ranked_docs = sorted(final_docs)
         '''
         # Build a dictionary for cache key
-        query_cache_dict = self.make_query_cache_dict(processed_query, isText)
+        '''query_cache_dict = self.make_query_cache_dict(processed_query, isText)
         # Check in query cache
         cached_result = self.query_cache.get(query_cache_dict)
         if cached_result is not None:
             logging.info("QUERY-LEVEL CACHE HIT! Returning cached doc list.")
             x = sorted(cached_result.items(), key=lambda x: x[1], reverse=True)[:1000]
-            return x
+            return x'''
 
         # logging.info("QUERY-LEVEL CACHE MISS. Running BM25.")
-        print("Reached THIS")
         # 1 - Get exclude tokens' document IDs
         exclude_docs = set()
         print(processed_query)
         for token in processed_query.get('exclude_tokens', []):
             token_results = self.search_index(token)
-            print("Token results: {}".format(token_results))
             if token_results:
                 exclude_docs.update(token_results.keys())
         print("Excluded documents: {}".format(exclude_docs))
         matching_docs = set()
-        proximity_scores = defaultdict(float)
 
         if isText:
             print("Text-based search")
+            ranked_docs = self.text_search(processed_query, exclude_docs)
+
+            #self.query_cache.set(query_cache_dict, ranked_docs)
+            return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
+            """
             for token in processed_query.get('tokens', []):
                 token_results = self.search_index(token)
                 if token_results:
@@ -302,6 +304,7 @@ class QueryProcessor:
                     continue
 
                 token_results_map = {token: self.search_index(token) for token in ngram}
+                token_results_map.pop('___')
                 docs_for_ngram = set.intersection(
                     *[set(results.keys()) for results in token_results_map.values() if results])
 
@@ -317,6 +320,40 @@ class QueryProcessor:
                     if len(positions_lists) == len(ngram) and self.tokens_in_proximity(positions_lists, threshold):
                         matching_docs.add(doc_id)
                         proximity_scores[doc_id] = 1 / (1 + threshold)
+
+                final_docs = matching_docs - exclude_docs
+                # bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
+                # tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
+
+                scores = self.bm25_tfidf_search(final_docs, processed_query["tokens"], 10000)
+                bm25_scores = dict(scores[0])
+                tfidf_scores = dict(scores[1])
+
+                # This could be used for normalising and using all three scores?
+                max_prox = max(proximity_scores.values(), default=1)
+                min_prox = min(proximity_scores.values(), default=0)
+                max_bm25 = max(bm25_scores.values(), default=1)
+                min_bm25 = min(bm25_scores.values(), default=0)
+                max_tfidf = max(tfidf_scores.values(), default=1)
+                min_tfidf = min(tfidf_scores.values(), default=0)
+
+                bm25_weight, tfidf_weight, proximity_weight = 0.5, 0.3, 0.2
+
+                ranked_docs = {
+                    doc_id: bm25_weight * (
+                            (bm25_scores.get(doc_id, min_bm25) - min_bm25) / (max_bm25 - min_bm25 + 1e-9)) +
+                            tfidf_weight * (
+                                    (tfidf_scores.get(doc_id, min_tfidf) - min_tfidf) / (
+                                    max_tfidf - min_tfidf + 1e-9)) +
+                            proximity_weight * (
+                                    (proximity_scores.get(doc_id, min_prox) - min_prox) / (
+                                    max_prox - min_prox + 1e-9))
+                        for doc_id in final_docs
+                }
+                # Store in query cache
+                self.query_cache.set(query_cache_dict, ranked_docs)
+                return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
+            """
         else:
             print("Ingredients-based search")
             token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
@@ -324,40 +361,16 @@ class QueryProcessor:
             token_doc_sets = [
                 set(results.keys()) for results in token_results_map.values() if results
             ]
-
             matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
+            ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 10000)
+            return ranked_docs
 
-        final_docs = matching_docs - exclude_docs
-        bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
-        tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
-
-        # This could be used for normalising and using all three scores?
-        max_prox = max(proximity_scores.values(), default=1)
-        min_prox = min(proximity_scores.values(), default=0)
-        max_bm25 = max(bm25_scores.values(), default=1)
-        min_bm25 = min(bm25_scores.values(), default=0)
-        max_tfidf = max(tfidf_scores.values(), default=1)
-        min_tfidf = min(tfidf_scores.values(), default=0)
-
-        bm25_weight, tfidf_weight = 0.5, 0.0
-        proximity_weight = 1 - (bm25_weight + tfidf_weight)
-
-        ranked_docs = {
-            doc_id: bm25_weight * ((bm25_scores.get(doc_id, min_bm25) - min_bm25) / (max_bm25 - min_bm25 + 1e-9)) +
-                    tfidf_weight * (
-                                (tfidf_scores.get(doc_id, min_tfidf) - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)) +
-                    proximity_weight * (
-                                (proximity_scores.get(doc_id, min_prox) - min_prox) / (max_prox - min_prox + 1e-9))
-            for doc_id in final_docs
-        }
-        # Store in query cache
-        self.query_cache.set(query_cache_dict, ranked_docs)
-        return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
 
     def compute_idf(self, df, N):
         """Compute Inverse Document Frequency (IDF)"""
         return math.log((N - df + 0.5) / (df + 0.5) + 1)
 
+    """
     # BM25 Search Function
     def bm25_search(self, doc_set, query_terms, top_n=100):
         env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
@@ -388,11 +401,7 @@ class QueryProcessor:
                             doc_scores[doc_id] += bm25_score * weight
 
         return sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
-
-    def compute_tfidf(self, tf, df, N):
-        if tf == 0 or df == 0:
-            return 0
-        return (1 + math.log10(tf)) * math.log10(N / df)
+    """
 
     def tfidf_search(self, doc_set, query_terms, top_n=10):
         env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
@@ -408,6 +417,9 @@ class QueryProcessor:
                     df = term_data.pop('___', 0)
 
                     for doc_id, fields in term_data.items():
+                        if doc_id not in doc_set:
+                            continue
+
                         for field_id, positions in fields.items():
                             tf = len(positions)
                             tfidf_score = self.compute_tfidf(tf, df, self.N)
@@ -415,6 +427,111 @@ class QueryProcessor:
                             doc_scores[doc_id] += tfidf_score * weight
 
         return sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
+
+    def compute_tfidf(self, tf, df, N):
+        if tf == 0 or df == 0:
+            return 0
+        return (1 + math.log10(tf)) * math.log10(N / df)
+
+    def text_search(self, processed_query, exclude_docs):
+        matching_docs = set()
+        proximity_scores = defaultdict(float)
+        for token in processed_query.get('tokens', []):
+            token_results = self.search_index(token)
+            if token_results:
+                matching_docs.update(token_results.keys())
+
+        for ngram in processed_query.get('n_grams', []):
+            ngram = list(ngram)
+            threshold = 3 if len(ngram) == 2 else 5 if len(ngram) == 3 else None
+            if threshold is None:
+                continue
+
+            token_results_map = {token: self.search_index(token) for token in ngram}
+            token_results_map.pop('___')
+            docs_for_ngram = set.intersection(
+                *[set(results.keys()) for results in token_results_map.values() if results])
+
+            if not docs_for_ngram:
+                continue
+
+            for doc_id in docs_for_ngram:
+                positions_lists = [
+                    sorted(pos for pos_list in token_results_map[token][doc_id].values() for pos in pos_list)
+                    for token in ngram if doc_id in token_results_map[token]
+                ]
+
+                if len(positions_lists) == len(ngram) and self.tokens_in_proximity(positions_lists, threshold):
+                    matching_docs.add(doc_id)
+                    proximity_scores[doc_id] = 1 / (1 + threshold)
+
+        final_docs = matching_docs - exclude_docs
+        # bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
+        # tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
+
+        scores = self.bm25_tfidf_search(final_docs, processed_query["tokens"], 10000)
+        bm25_scores = dict(scores[0])
+        tfidf_scores = dict(scores[1])
+
+        # This could be used for normalising and using all three scores?
+        max_prox = max(proximity_scores.values(), default=1)
+        min_prox = min(proximity_scores.values(), default=0)
+        max_bm25 = max(bm25_scores.values(), default=1)
+        min_bm25 = min(bm25_scores.values(), default=0)
+        max_tfidf = max(tfidf_scores.values(), default=1)
+        min_tfidf = min(tfidf_scores.values(), default=0)
+
+        bm25_weight, tfidf_weight, proximity_weight = 0.5, 0.3, 0.2
+
+        ranked_docs = {
+            doc_id: bm25_weight * (
+                    (bm25_scores.get(doc_id, min_bm25) - min_bm25) / (max_bm25 - min_bm25 + 1e-9)) +
+                    tfidf_weight * (
+                        (tfidf_scores.get(doc_id, min_tfidf) - min_tfidf) / (
+                            max_tfidf - min_tfidf + 1e-9)) +
+                    proximity_weight * (
+                        (proximity_scores.get(doc_id, min_prox) - min_prox) / (
+                            max_prox - min_prox + 1e-9))
+                for doc_id in final_docs
+        }
+        # Store in query cache
+        print("length of ranked_docs in text search: " + str(len(ranked_docs)))
+        return ranked_docs
+
+    def bm25_tfidf_search(self, doc_set, query_terms, top_n=100):
+        env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
+        doc_scores_bm25 = defaultdict(float)
+        doc_scores_tfidf = defaultdict(float)
+        doc_lengths = {}
+
+        with env.begin() as txn:
+            for term in query_terms:
+                key = term.encode('utf-8')
+                data = txn.get(key)
+
+                if data:
+                    term_data = pickle.loads(data)
+                    df = term_data.pop('___', 0)
+                    idf = self.compute_idf(df, self.N)
+
+                    for doc_id, fields in term_data.items():
+                        if doc_id not in doc_set:
+                            continue
+
+                        for field_id, positions in fields.items():
+                            tf = len(positions)
+                            weight = self.FIELD_WEIGHTS.get(field_id, 1.0)
+                            doc_length = doc_lengths.get(doc_id, self.avg_doc_length)
+
+                            bm25_score = idf * ((tf * (self.k1 + 1)) /
+                                                (tf + self.k1 * (
+                                                        1 - self.b + self.b * (doc_length / self.avg_doc_length))))
+                            tfidf_score = self.compute_tfidf(tf, df, self.N)
+
+                            doc_scores_tfidf[doc_id] += tfidf_score * weight
+                            doc_scores_bm25[doc_id] += bm25_score * weight
+
+        return [sorted(doc_scores_bm25.items(), key=lambda x: x[1], reverse=True)[:top_n], sorted(doc_scores_tfidf.items(), key=lambda x: x[1], reverse=True)[:top_n]]
 
     def tokens_in_proximity(self, positions_lists, threshold):
         """
@@ -516,32 +633,31 @@ class QueryProcessor:
         recipe_ids = [doc[1] for doc in mappings]
 
         final_recipes = []
-        missing_recipe_ids = []
+        #missing_recipe_ids = []
         # check doc cache for each recipe_id
-        for rid in recipe_ids:
+        '''for rid in recipe_ids:
             cached_doc = self.doc_cache.get_doc(rid)
             if cached_doc:
                 logging.info(f"Doc-level cache HIT for recipe_id={rid}")
                 final_recipes.append(cached_doc)
             else:
-                missing_recipe_ids.append(rid)
+                missing_recipe_ids.append(rid)'''
 
         # if some recipe_ids are missing, fetch them from the DB
-        if missing_recipe_ids:
-            cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (missing_recipe_ids,))
-            db_recipes = cursor.fetchall()
+        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
+        db_recipes = cursor.fetchall()
 
-            for r in db_recipes:
-                recipe_dict = {
+        for r in db_recipes:
+            recipe_dict = {
                     "id": r[0],
                     "url": r[2],
                     "title": r[1],
                     "ingredients": r[3],
                     "instructions": r[4]
-                }
+            }
                 # store in doc cache
-                self.doc_cache.set_doc(r[0], recipe_dict)
-                final_recipes.append(recipe_dict)
+                #self.doc_cache.set_doc(r[0], recipe_dict)
+            final_recipes.append(recipe_dict)
 
         end_time = time.time()
         conn.close()
@@ -551,10 +667,10 @@ class QueryProcessor:
 
     def get_selected_recipe_from_store(self, recipe_id):
         # check doc cache
-        cached = self.doc_cache.get_doc(recipe_id)
+        '''cached = self.doc_cache.get_doc(recipe_id)
         if cached:
             logging.info(f"Single-recipe doc cache HIT for recipe_id={recipe_id}")
-            return cached
+            return cached'''
 
         # otherwise fetch from DB
         conn = self.conn
@@ -571,7 +687,7 @@ class QueryProcessor:
             "ingredients": row[3],
             "instructions": row[4]
             }
-            self.doc_cache.set_doc(row[0], recipe_dict)
+            #self.doc_cache.set_doc(row[0], recipe_dict)
             return recipe_dict
         else:
             return "No recipe found"

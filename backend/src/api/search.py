@@ -3,6 +3,7 @@ import logging
 from flask import Blueprint, request, jsonify, session
 from scripts.query_processor import QueryProcessor
 from global_path import get_relative_path
+import time
 
 search_blueprint = Blueprint('search', __name__)
 
@@ -23,7 +24,9 @@ def search_by_ingredients():
     end_idx = start_idx + per_page
 
     # Initialize QueryProcessor
+    start = time.time()
     processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
+    logging.info("Time taken to rank: " + str(time.time() - start))
     processed_query = processor.process_query_ingredients(ingredients, exclude)
 
     # recalculate the ranked documents for each page request
@@ -56,7 +59,9 @@ def search_by_text():
     end_idx = start_idx + per_page
 
     # Initialize QueryProcessor
+    start = time.time()
     processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
+    logging.info("Time taken to rank: " + str(time.time() - start))
     processed_query = processor.process_query_text(text, exclude_tokens=exclude)
 
     if processed_query == "No tokens found" :
