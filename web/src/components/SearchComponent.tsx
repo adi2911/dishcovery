@@ -1,7 +1,6 @@
-// SearchComponent.tsx
 import { Menu, Transition } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/20/solid';
-import React, { Fragment } from 'react';
+import React, { Fragment, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { performSearch, SearchResponse } from '../service/searchService';
 import { useSearch } from '../store/SearchContext';
@@ -14,7 +13,7 @@ const SearchComponent: React.FC = () => {
 
   // Pull searchState + setSearchState from your custom context
   const { searchState, setSearchState } = useSearch();
-
+  const [timeTaken, setTimeTaken] = useState(0);
   const {
     results,
     currentPage,
@@ -75,8 +74,21 @@ const SearchComponent: React.FC = () => {
     setIngredients([...ingredients, ingredient]);
   };
 
+
+  function startTimer(): number {
+    return performance.now();
+  }
+  
+  function endTimer(startTime: number): number {
+    const endTime = performance.now();
+    const duration = endTime - startTime; // duration in milliseconds
+    return duration;
+  }
   // Main search function
   const handleSearch = async (page = 1) => {
+
+    const startTime = startTimer();
+    
     const data: SearchResponse = await performSearch(
       searchType,
       ingredients,
@@ -88,6 +100,9 @@ const SearchComponent: React.FC = () => {
     setResults(data.recipes);
     setCurrentPage(data.page);
     setTotalPages(data.totalPages);
+
+    const endTime = endTimer(startTime);
+    setTimeTaken(endTime)
   };
 
   // Specifically triggers a “fresh” search at page=1
@@ -116,8 +131,36 @@ const SearchComponent: React.FC = () => {
   const hasSearched = results.length > 0;
 
   if (!hasSearched) {
+    // -- INITIAL VIEW --
     return (
-      <div className="search-card">
+      <div
+        className="search-card"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            const activeEl = document.activeElement as HTMLInputElement | null;
+            if (!activeEl) {
+              handleInitialSearch();
+              return;
+            }
+
+            const nameAttr = activeEl.getAttribute('name');
+            if (
+              nameAttr === 'ingredientInput' ||
+              nameAttr === 'exclusionInput'
+            ) {
+              // If there's typed text, let the input's own onKeyDown handle it => do nothing here
+              // If empty, trigger the search
+              if (!activeEl.value.trim()) {
+                handleInitialSearch();
+              }
+            } else {
+              // Not an ingredient or exclusion field => do the search
+              handleInitialSearch();
+            }
+          }
+        }}
+      >
         <h2 className="title">Recipe Search</h2>
 
         {/* -- Search Type Dropdown -- */}
@@ -274,6 +317,7 @@ const SearchComponent: React.FC = () => {
           <label className="label">Exclude These</label>
           <input
             type="text"
+            name="exclusionInput"
             placeholder="Type exclusions and press Enter"
             onKeyDown={addExclusion}
             className="input"
@@ -302,9 +346,10 @@ const SearchComponent: React.FC = () => {
       </div>
     );
   } else {
-    // ------------------ Results View ------------------
+    // ------------------ RESULTS VIEW ------------------
     return (
       <ResultsComponent
+        timeTaken = {timeTaken}
         searchType={searchType}
         setSearchType={setSearchType}
         dietPreference={dietPreference}
