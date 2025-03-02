@@ -390,8 +390,8 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
       <div className="results-container mt-6">
         {currentPageResults.map((recipe) => {
           const instructionSnippet =
-            recipe.instructions.length > 80
-              ? recipe.instructions.slice(0, 80) + '...'
+            recipe.instructions.length > 20
+              ? recipe.instructions.slice(0, 20) + '...'
               : recipe.instructions;
           const ingredientHighlights = recipe.ingredients.slice(0, 3).join(', ');
           const ingredientsSnippet =
