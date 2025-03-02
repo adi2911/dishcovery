@@ -52,8 +52,7 @@ class QueryProcessor:
         self.b = 0.75
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
-        #self.lmdb_path = os.path.join("/Users/krishijainuk/PycharmProjects/dishcovery/backend/src/data/inverted_index.lmdb", "inverted_index.lmdb_data.mdb")
-        self.lmdb_path = get_relative_path("data", "index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
+        self.lmdb_path = get_relative_path("data","index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
 
@@ -237,13 +236,6 @@ class QueryProcessor:
 
         return processed_query
 
-    '''def make_query_cache_dict(self, processed_query, is_text):
-        return {
-            "tokens": processed_query.get("tokens", []),
-            "exclude": processed_query.get("exclude_tokens", []),
-            "n_grams": processed_query.get("n_grams", []),
-            "isText": is_text
-        }'''
 
     def get_ranked_documents(self, processed_query, isText):
         '''
@@ -257,33 +249,18 @@ class QueryProcessor:
                 "exclude_tokens": exclude_tokens  # Tokens to exclude
             }
 
-        # This set will store documents that match the query
-
-        # 5 - Remove any excluded documents.
-        final_docs = matching_docs - exclude_docs
-
-        # 6 - Return a sorted list of document IDs.
-        ranked_docs = sorted(final_docs)
-        '''
-        # Build a dictionary for cache key
-        '''query_cache_dict = self.make_query_cache_dict(processed_query, isText)
-        # Check in query cache
-        cached_result = self.query_cache.get(query_cache_dict)
-        if cached_result is not None:
-            logging.info("QUERY-LEVEL CACHE HIT! Returning cached doc list.")
-            x = sorted(cached_result.items(), key=lambda x: x[1], reverse=True)[:1000]
-            return x'''
-
-        # logging.info("QUERY-LEVEL CACHE MISS. Running BM25.")
+      '''
         # 1 - Get exclude tokens' document IDs
         exclude_docs = set()
         print(processed_query)
         for token in processed_query.get('exclude_tokens', []):
             token_results = self.search_index(token)
+            print("Token results: {}".format(token_results))
             if token_results:
                 exclude_docs.update(token_results.keys())
         print("Excluded documents: {}".format(exclude_docs))
         matching_docs = set()
+        proximity_scores = defaultdict(float)
 
         if isText:
             print("Text-based search")
@@ -292,6 +269,7 @@ class QueryProcessor:
             #self.query_cache.set(query_cache_dict, ranked_docs)
             return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
             """
+
             for token in processed_query.get('tokens', []):
                 token_results = self.search_index(token)
                 if token_results:
@@ -532,6 +510,9 @@ class QueryProcessor:
                             doc_scores_bm25[doc_id] += bm25_score * weight
 
         return [sorted(doc_scores_bm25.items(), key=lambda x: x[1], reverse=True)[:top_n], sorted(doc_scores_tfidf.items(), key=lambda x: x[1], reverse=True)[:top_n]]
+                                                           
+
+       
 
     def tokens_in_proximity(self, positions_lists, threshold):
         """
@@ -619,7 +600,6 @@ class QueryProcessor:
         return conn
 
     def get_recipe_from_store(self, paged_documents, diet_preference):
-        start_time = time.time()
         document_ids = [doc[0] for doc in paged_documents]
         # [(document_id, recipe_id), ...]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
@@ -675,6 +655,7 @@ class QueryProcessor:
         # otherwise fetch from DB
         conn = self.conn
 
+
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
         recipe_details = cursor.fetchall()
@@ -686,8 +667,8 @@ class QueryProcessor:
             "title": row[1],
             "ingredients": row[3],
             "instructions": row[4]
+
             }
-            #self.doc_cache.set_doc(row[0], recipe_dict)
             return recipe_dict
         else:
             return "No recipe found"

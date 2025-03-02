@@ -12,4 +12,3 @@ flask_session
 lmdb
 cloud-sql-python-connector
 pg8000
-redis==4.5.5
