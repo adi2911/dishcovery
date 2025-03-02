@@ -92,7 +92,10 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
 
       case 'Enter':
         event.preventDefault();
-        if (activeSuggestionIndex >= 0 && activeSuggestionIndex < suggestions.length) {
+        if (
+          activeSuggestionIndex >= 0 &&
+          activeSuggestionIndex < suggestions.length
+        ) {
           onAddIngredient(suggestions[activeSuggestionIndex]);
         } else if (suggestions.length > 0) {
           onAddIngredient(suggestions[0]);
@@ -110,7 +113,9 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
 
   useEffect(() => {
     if (suggestionListRef.current && activeSuggestionIndex >= 0) {
-      const activeItem = suggestionListRef.current.children[activeSuggestionIndex] as HTMLElement;
+      const activeItem = suggestionListRef.current.children[
+        activeSuggestionIndex
+      ] as HTMLElement;
       if (activeItem) {
         activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
@@ -133,10 +138,12 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
 
   return (
     <div style={{ position: 'relative' }}>
+      {/* Add name="ingredientInput" so we know not to trigger global search */}
       <input
         type="text"
         placeholder="Type an ingredient and press Enter"
         className="input"
+        name="ingredientInput"
         value={query}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
@@ -149,7 +156,9 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
             <li
               key={index}
               onClick={() => handleSuggestionClick(item)}
-              className={`suggestion-item ${index === activeSuggestionIndex ? 'active-suggestion' : ''}`}
+              className={`suggestion-item ${
+                index === activeSuggestionIndex ? 'active-suggestion' : ''
+              }`}
             >
               {item}
             </li>

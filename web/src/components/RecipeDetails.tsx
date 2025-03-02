@@ -89,8 +89,14 @@ const RecipeDetail: React.FC = () => {
       <h2 className="text-xl font-semibold mt-4 mb-2">Instructions</h2>
       <p>{recipe.instructions}</p>
       <h3 className="text-xl font-semibold mt-4 mb-2">Recipe site</h3>
-      <a target="_blank" rel="noreferrer" href={recipe.url} > {recipe.url}</a>
-        <br/>
+      <a
+        className="inline-block bg-blue-600 text-white px-4 py-2 rounded-md shadow-md hover:bg-blue-500 transition-colors"
+        target="_blank"
+        rel="noopener noreferrer"
+        href={recipe.url}
+      >
+        Visit Recipe Website
+      </a>
       <button
         className="mt-4 bg-gray-700 px-3 py-2 rounded"
         onClick={() => navigate('/')}
