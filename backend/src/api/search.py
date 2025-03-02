@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, session, current_app as app
 
 from scripts.query_processor import QueryProcessor
 from global_path import get_relative_path
+import time
 
 import logging
 import time
@@ -27,6 +28,8 @@ def search_by_ingredients():
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
 
+
+    processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
     # Get the QueryProcessor instance from app config
     processor = app.config['query_processor']
     processed_query = processor.process_query_ingredients(ingredients, exclude)
@@ -68,12 +71,15 @@ def search_by_text():
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
 
+
+    processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
     # Get the QueryProcessor instance from app config
     processor = app.config['query_processor']
     processed_query = processor.process_query_text(text, exclude_tokens=exclude)
 
     if processed_query == "No tokens found" :
         return jsonify({"error": "No results found"}), 400
+
 
     # If first page request, process search and store results in session
     # If not, retrieve recipes from session
