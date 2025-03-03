@@ -601,7 +601,6 @@ class QueryProcessor:
 
     def get_recipe_from_store(self, paged_documents, diet_preference):
         document_ids = [doc[0] for doc in paged_documents]
-        # [(document_id, recipe_id), ...]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
 
         conn = self.conn
@@ -639,10 +638,7 @@ class QueryProcessor:
                 #self.doc_cache.set_doc(r[0], recipe_dict)
             final_recipes.append(recipe_dict)
 
-        end_time = time.time()
-        conn.close()
-
-        return final_recipes, end_time - start_time
+        return final_recipes
 
 
     def get_selected_recipe_from_store(self, recipe_id):
