@@ -78,7 +78,7 @@ def search_by_text():
     processed_query = processor.process_query_text(text, exclude_tokens=exclude)
 
     if processed_query == "No tokens found" :
-        return jsonify({"error": "No results found"}), 400
+        return jsonify({"error": "Recipe not found"}), 400
 
 
     # If first page request, process search and store results in session
@@ -95,6 +95,11 @@ def search_by_text():
             ranked_documents = processor.get_ranked_documents(processed_query, False)
             ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
 
+            
+    if len(ranked_recipes) == 0:
+        return jsonify({"error": "Recipe not found"}), 400
+        
+
     paginated_results = ranked_recipes[start_idx:end_idx]
 
     return jsonify({
@@ -108,9 +113,10 @@ def search_by_text():
 
 @search_blueprint.route('/recipes/<recipe_id>', methods=['GET'])
 def get_recipe_by_id(recipe_id):
+    print(f"get_recipe_by_id {recipe_id}")
     processor = app.config['query_processor']
     recipe = processor.get_selected_recipe_from_store(recipe_id)
     if recipe:
         return jsonify(recipe), 200
     else:
-        return jsonify({"error": "Recipe not found"}), 404
+        return jsonify({"error": "Recipe not found"}), 400

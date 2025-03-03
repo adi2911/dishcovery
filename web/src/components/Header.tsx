@@ -1,9 +1,9 @@
 import { useNavigate } from 'react-router-dom';
-import { useSearch } from '../store/SearchContext'; // <-- ADDED
+import { useSearch } from '../store/SearchContext';
 
 const Header = () => {
   const navigate = useNavigate();
-  const { setSearchState } = useSearch(); // <-- ADDED
+  const { setSearchState } = useSearch();
 
   const handleLogoClick = () => {
     setSearchState((prev) => ({
@@ -16,6 +16,7 @@ const Header = () => {
       exclusions: [],
       searchType: 'text',
       dietPreference: 'none',
+      error: false,
     }));
     navigate('/');
   };

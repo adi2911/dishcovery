@@ -30,6 +30,7 @@ interface ResultsComponentProps {
   totalPages: number;
   goToNextPage: () => void;
   goToPrevPage: () => void;
+  error: boolean;
 
   currentPageResults: Recipe[];
   handleRecipeClick: (recipeId: string) => void;
@@ -37,6 +38,7 @@ interface ResultsComponentProps {
 
 const ResultsComponent: React.FC<ResultsComponentProps> = ({
   timeTaken,
+  error,
   searchType,
   setSearchType,
   dietPreference,
@@ -90,31 +92,24 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
     return false;
   };
 
-
   function formatDuration(milliseconds: number): string {
     // If it's under 1 second, show ms
     if (milliseconds < 1000) {
       return `${milliseconds.toFixed(2)} ms`;
     }
-  
     // Convert to seconds
     const totalSeconds = milliseconds / 1000;
-  
-    // If it's under 1 minute, show in seconds
     if (totalSeconds < 60) {
       return `${totalSeconds.toFixed(2)} s`;
     }
-  
-    // Otherwise, show minutes:seconds
+    // Otherwise, show minutes + seconds
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = (totalSeconds % 60).toFixed(2);
     return `${minutes} min ${seconds} s`;
   }
 
-  const searchDuration = formatDuration(timeTaken)
+  const searchDuration = formatDuration(timeTaken);
 
-  // On Enter, search only if fields changed, and only if the user
-  // is NOT typing something in an ingredient/exclusion input.
   const handleGlobalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter') {
       const activeEl = document.activeElement as HTMLInputElement | null;
@@ -122,7 +117,6 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
         // No focused element => run search if changed
         if (fieldsChanged()) {
           handleSearch();
-          // Update snapshot
           initialRef.current = {
             searchType,
             dietPreference,
@@ -177,6 +171,7 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
       exclusions: [],
       searchType: 'text',
       dietPreference: 'none',
+      error: false
     }));
   };
 
@@ -277,9 +272,8 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
           <div className="filter-item flex flex-col">
             <label className="filter-label">Ingredients</label>
             <AutoComplete
-              onAddIngredient={(ingredient) => {
+              onAddValue={(ingredient) => {
                 if (ingredient.trim()) {
-                  // Create a synthetic keydown event for addIngredient()
                   const syntheticEvent = {
                     key: 'Enter',
                     target: { value: ingredient },
@@ -288,6 +282,8 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
                   addIngredient(syntheticEvent);
                 }
               }}
+              inputName="ingredientInput"
+              placeholder="Type an ingredient and press Enter"
             />
           </div>
         ) : (
@@ -303,15 +299,21 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
           </div>
         )}
 
-        {/* Exclusions */}
         <div className="filter-item flex flex-col">
           <label className="filter-label">Exclusions</label>
-          <input
-            type="text"
-            name="exclusionInput"
+          <AutoComplete
+            onAddValue={(exclusion) => {
+              if (exclusion.trim()) {
+                const syntheticEvent = {
+                  key: 'Enter',
+                  target: { value: exclusion },
+                  preventDefault: () => {},
+                } as unknown as React.KeyboardEvent<HTMLInputElement>;
+                addExclusion(syntheticEvent);
+              }
+            }}
+            inputName="exclusionInput"
             placeholder="Exclude items, press Enter"
-            className="filter-input"
-            onKeyDown={addExclusion}
           />
         </div>
 
@@ -325,7 +327,7 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
           </button>
         </div>
 
-        {/* Summary (optional text) */}
+        {/* Summary (optional) */}
         <div className="filter-item flex flex-col">
           <label className="filter-label" style={{ visibility: 'hidden' }}>
             &nbsp;
@@ -336,7 +338,7 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
               : `Searched for ingredients: ${
                   ingredients.length > 0 ? ingredients.join(', ') : '(none)'
                 }`}
-                {`Fetched results in : ${searchDuration}`}
+            {` | Fetched results in: ${searchDuration}`}
           </span>
         </div>
 
@@ -440,7 +442,7 @@ const ResultsComponent: React.FC<ResultsComponentProps> = ({
         )}
 
         {/* If no results */}
-        {results.length === 0 && (
+        {(results.length === 0 || error) && (
           <p className="mt-4 text-gray-300">
             No results found. Try adjusting your search.
           </p>

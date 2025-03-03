@@ -1,4 +1,3 @@
-// searchService.ts
 import axios from 'axios';
 import { Recipe } from '../components/RecipeDetails';
 import { CLOUD_RUN } from '../store/constants';
@@ -9,6 +8,7 @@ export interface SearchResponse {
   perPage: number;
   totalResults: number;
   totalPages: number;
+  isError: boolean;
 }
 
 export async function performSearch(
@@ -31,7 +31,6 @@ export async function performSearch(
         dietPreference,
       };
     } else {
-      // searchType === 'text'
       url = `${CLOUD_RUN}/searchByText`;
       requestData = {
         text: searchText,
@@ -39,13 +38,6 @@ export async function performSearch(
         dietPreference,
       };
     }
-
-    /**
-     *  For Axios POST, the syntax is:
-     *    axios.post(url, data, config)
-     *
-     *  We move `page` into config.params instead of body.
-     */
     const response = await axios.post(url, requestData, {
       params: {
         page,
@@ -55,10 +47,8 @@ export async function performSearch(
 
     const data = response.data;
 
-    // Convert "results" field into a Recipe[] as before
     let recipeArray: Recipe[] = [];
     if (data.results) {
-      // data.results is already an array of { id, title, ingredients, ... }
       recipeArray = data.results.map((r: any) => {
         return {
           id: r.id,
@@ -71,7 +61,6 @@ export async function performSearch(
       });
     }
 
-    // Extract pagination info from the response
     const pageFromServer = data.page ?? 1;
     const perPage = data.per_page ?? 10;
     const totalResults = data.total_results ?? recipeArray.length;
@@ -83,15 +72,17 @@ export async function performSearch(
       perPage,
       totalResults,
       totalPages,
+      isError:false
     };
   } catch (error) {
-    console.error('Search Error:', error);
+    console.log(">>>> catch is getting called")
     return {
       recipes: [],
-      page: 1,
-      perPage: 10,
-      totalResults: 0,
-      totalPages: 1,
+      page: 0,
+      perPage: 0,
+      totalPages:0,
+      totalResults:0,
+      isError:true
     };
   }
 }
