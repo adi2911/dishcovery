@@ -19,6 +19,11 @@ def search_by_ingredients():
     ingredients = data.get('ingredients', [])
     exclude = data.get('exclude', [])
     diet_preference = data.get('dietPreference', 'none')
+    if diet_preference != 0:
+        hasDietPreference = True
+    else:
+        hasDietPreference = False
+
     """
         Change diet preference logic
         0 - no diet preference
@@ -42,14 +47,14 @@ def search_by_ingredients():
     diet_preference = 0 # hardcoding for test
 
     if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, False)
+        ranked_documents = processor.get_ranked_documents(processed_query, False, hasDietPreference)
         ranked_recipe_ids = processor.get_recipe_mappings(ranked_documents, diet_preference)
         ranked_recipes = processor.get_recipe_from_store(ranked_recipe_ids, diet_preference)
     else:
         if "ranked_recipes" in session:
             ranked_recipes = session.get('ranked_recipes', [])
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, False)
+            ranked_documents = processor.get_ranked_documents(processed_query, False, hasDietPreference)
             ranked_recipe_ids = processor.get_recipe_mappings(ranked_documents, diet_preference)
             ranked_recipes = processor.get_recipe_from_store(ranked_recipe_ids, diet_preference)
 
@@ -99,7 +104,11 @@ def search_by_text():
     text = data.get('text', '')
     exclude = data.get('exclude', [])
     diet_preference = data.get('dietPreference', 'none')
-    diet_preference = 3
+    diet_preference = 3 #hardcoded for testing
+    if diet_preference != 0:
+        hasDietPreference = True
+    else:
+        hasDietPreference = False
     """
     Change diet preference logic
     0 - no diet preference
@@ -126,16 +135,14 @@ def search_by_text():
         return jsonify({"error": "Recipe not found"}), 400
 
     if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, True)
-        print(len(ranked_documents))
+        ranked_documents = processor.get_ranked_documents(processed_query, True, hasDietPreference)
         ranked_recipe_ids = processor.get_recipe_mappings(ranked_documents, diet_preference)
-        print(len(ranked_recipe_ids))
         ranked_recipes = processor.get_recipe_from_store(ranked_recipe_ids, diet_preference)
     else:
         if "ranked_recipes" in session:
             ranked_recipes = session.get('ranked_recipes', [])
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, True)
+            ranked_documents = processor.get_ranked_documents(processed_query, True, hasDietPreference)
             ranked_recipe_ids = processor.get_recipe_mappings(ranked_documents, diet_preference)
             ranked_recipes = processor.get_recipe_from_store(ranked_recipe_ids, diet_preference)
 
