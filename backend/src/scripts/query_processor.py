@@ -233,7 +233,7 @@ class QueryProcessor:
         return processed_query
 
 
-    def get_ranked_documents(self, processed_query, isText):
+    def get_ranked_documents(self, processed_query, isText, hasDietPreference=False):
         '''
         Takes the query details as JSON, processes the search and ranks the documents.
         Input: {
@@ -263,7 +263,10 @@ class QueryProcessor:
             ranked_docs = self.text_search(processed_query, exclude_docs)
 
             #self.query_cache.set(query_cache_dict, ranked_docs)
-            return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
+            if hasDietPreference:
+                return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:15000] # to see if there are enough options
+            else:
+                return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:10000]
         else:
             print("Ingredients-based search")
             token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
@@ -272,7 +275,10 @@ class QueryProcessor:
                 set(results.keys()) for results in token_results_map.values() if results
             ]
             matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
-            ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 10000)
+            if hasDietPreference:
+                ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 10000)
+            else:
+                ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 15000)
             return ranked_docs
 
 
@@ -498,7 +504,33 @@ class QueryProcessor:
 
         return conn
 
-    def get_recipe_from_store(self, paged_documents, diet_preference):
+    def get_recipe_mappings(self, ranked_documents, diet_preference):
+        document_ids = [doc[0] for doc in ranked_documents]
+        base_query = """
+                SELECT document_id, recipe_id 
+                FROM document_mappings_extended
+                WHERE document_id = ANY(%s)
+            """
+        params = [document_ids]
+
+        #print(ranked_documents[:100])
+        # Apply dietary filter if necessary
+        if diet_preference == 1:
+            base_query += " AND is_vegan = True"
+        elif diet_preference == 2:
+            base_query += " AND is_vegetarian = True"
+        elif diet_preference == 3:
+            base_query += " AND is_gluten_free = True"
+
+        conn = self.conn
+        cursor = conn.cursor()
+        cursor.execute(base_query, tuple(params))
+        mappings = cursor.fetchall()  # List of (document_id, recipe_id)
+        recipe_ids = [recipe_id[1] for recipe_id in mappings][:10000]
+        return recipe_ids
+
+    def get_recipe_from_store(self, recipe_ids, diet_preference):
+        """
         document_ids = [doc[0] for doc in paged_documents]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
 
@@ -509,11 +541,14 @@ class QueryProcessor:
         cursor.execute(query, (document_ids,))
         mappings = cursor.fetchall()
         recipe_ids = [doc[1] for doc in mappings]
+        """
+
+        conn = self.conn
+        cursor = conn.cursor()
 
         final_recipes = []
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
         db_recipes = cursor.fetchall()
-
         for r in db_recipes:
             recipe_dict = {
                     "id": r[0],
@@ -523,7 +558,7 @@ class QueryProcessor:
                     "instructions": r[4]
             }
             final_recipes.append(recipe_dict)
-        
+
         return final_recipes
 
 

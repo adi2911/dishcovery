@@ -19,6 +19,13 @@ def search_by_ingredients():
     ingredients = data.get('ingredients', [])
     exclude = data.get('exclude', [])
     diet_preference = data.get('dietPreference', 'none')
+    """
+        Change diet preference logic
+        0 - no diet preference
+        1 - is_vegan
+        2 - is_vegetarian
+        3 - is_gluten_free
+    """
 
     # Pagination parameters
     page = int(request.args.get('page', 1))  # Default to page 1
@@ -28,12 +35,40 @@ def search_by_ingredients():
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
 
-
     processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
     # Get the QueryProcessor instance from app config
     processor = app.config['query_processor']
     processed_query = processor.process_query_ingredients(ingredients, exclude)
+    diet_preference = 0 # hardcoding for test
 
+    if page == 1:
+        ranked_documents = processor.get_ranked_documents(processed_query, False)
+        ranked_recipe_ids = processor.get_recipe_mappings(ranked_documents, diet_preference)
+        ranked_recipes = processor.get_recipe_from_store(ranked_recipe_ids, diet_preference)
+    else:
+        if "ranked_recipes" in session:
+            ranked_recipes = session.get('ranked_recipes', [])
+        else:
+            ranked_documents = processor.get_ranked_documents(processed_query, False)
+            ranked_recipe_ids = processor.get_recipe_mappings(ranked_documents, diet_preference)
+            ranked_recipes = processor.get_recipe_from_store(ranked_recipe_ids, diet_preference)
+
+    if len(ranked_recipes) == 0:
+        return jsonify({"error": "Recipe not found"}), 400
+
+    paginated_results = ranked_recipes[start_idx:end_idx]
+
+    return jsonify({
+        "results": paginated_results,
+        "page": page,
+        "per_page": per_page,
+        "total_results": len(ranked_recipes),
+        "total_pages": (len(ranked_recipes) + per_page - 1) // per_page  # Compute total pages
+    }), 200
+
+    """
+    Old Code:
+    
     if page == 1:
         ranked_documents = processor.get_ranked_documents(processed_query, False)
         ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
@@ -55,6 +90,8 @@ def search_by_ingredients():
         "total_results": len(ranked_recipes),
         "total_pages": (len(ranked_recipes) + per_page - 1) // per_page  # Compute total pages
     }), 200
+    
+    """
 
 @search_blueprint.route('/searchByText', methods=['POST'])
 def search_by_text():
@@ -62,6 +99,14 @@ def search_by_text():
     text = data.get('text', '')
     exclude = data.get('exclude', [])
     diet_preference = data.get('dietPreference', 'none')
+    diet_preference = 3
+    """
+    Change diet preference logic
+    0 - no diet preference
+    1 - is_vegan
+    2 - is_vegetarian
+    3 - is_gluten_free
+    """
 
     # Pagination parameters
     page = int(request.args.get('page', 1))
@@ -80,7 +125,35 @@ def search_by_text():
     if processed_query == "No tokens found" :
         return jsonify({"error": "Recipe not found"}), 400
 
+    if page == 1:
+        ranked_documents = processor.get_ranked_documents(processed_query, True)
+        print(len(ranked_documents))
+        ranked_recipe_ids = processor.get_recipe_mappings(ranked_documents, diet_preference)
+        print(len(ranked_recipe_ids))
+        ranked_recipes = processor.get_recipe_from_store(ranked_recipe_ids, diet_preference)
+    else:
+        if "ranked_recipes" in session:
+            ranked_recipes = session.get('ranked_recipes', [])
+        else:
+            ranked_documents = processor.get_ranked_documents(processed_query, True)
+            ranked_recipe_ids = processor.get_recipe_mappings(ranked_documents, diet_preference)
+            ranked_recipes = processor.get_recipe_from_store(ranked_recipe_ids, diet_preference)
 
+    if len(ranked_recipes) == 0:
+        return jsonify({"error": "Recipe not found"}), 400
+
+    paginated_results = ranked_recipes[start_idx:end_idx]
+
+    return jsonify({
+        "results": paginated_results,
+        "page": page,
+        "per_page": per_page,
+        "total_results": len(ranked_recipes),
+        "total_pages": (len(ranked_recipes) + per_page - 1) // per_page  # Compute total pages
+    }), 200
+
+    """
+    Old Code:
     # If first page request, process search and store results in session
     # If not, retrieve recipes from session
     if page == 1:
@@ -94,8 +167,8 @@ def search_by_text():
         else:
             ranked_documents = processor.get_ranked_documents(processed_query, False)
             ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
-
-            
+    
+    
     if len(ranked_recipes) == 0:
         return jsonify({"error": "Recipe not found"}), 400
         
@@ -109,6 +182,7 @@ def search_by_text():
         "total_results": len(ranked_recipes),
         "total_pages": (len(ranked_recipes) + per_page - 1) // per_page  # Compute total pages
     }), 200
+    """
 
 
 @search_blueprint.route('/recipes/<recipe_id>', methods=['GET'])
