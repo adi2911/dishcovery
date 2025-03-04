@@ -49,6 +49,8 @@ class QueryProcessor:
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
         self.lmdb_path = get_relative_path("data","index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
+        self.syn_path = get_relative_path("api","ingredient_synonyms_mapping.json")
+
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
 
@@ -179,16 +181,17 @@ class QueryProcessor:
 
         # Inititalise processed query dict
         processed_query = {"original_query": query,
-                           # "processed_query": "", NOT REQUIRED
-                           "n_grams": [],  # remove underscore
-                           "synonyms": [],  # TO_DO
-                           "tokens": [],
-                           "exclude_tokens": exclude_tokens
-                           }
+                        # "processed_query": "", NOT REQUIRED
+                        "n_grams": [],  # remove underscore
+                        "synonyms": [],  # TO_DO
+                        "tokens": [],
+                        "exclude_tokens": exclude_tokens
+                        }
 
         processed_query['phrase_queries'] = self.extract_phrases(query)
         # processed_query['boolean_operators'] = self.extract_boolean_operators(query) NOT REQUIRED
 
+        # Clean and tokenize the query
         cleaned_query = self.text_cleaner(query)
         tokenised_query = self.text_tokenizer(cleaned_query)
         print("Initial exclude tokens: " + str(exclude_tokens))
@@ -198,18 +201,67 @@ class QueryProcessor:
 
         if len(tokenised_query) == 0:
             return "No tokens found"
+        
+        # Store the pre-stemmed tokens for synonym expansion
+        pre_stemmed_tokens = tokenised_query.copy()
+        
+        # Expand query with synonyms BEFORE stemming
+        synonyms = self.get_synonyms_for_tokens(pre_stemmed_tokens)
+        processed_query['synonyms'] = synonyms
+        
+        # Combine original tokens with synonyms for stemming
+        all_tokens = tokenised_query + synonyms
 
+        print("Query now:")
+        print(synonyms)
+        
+        # Apply stemming to all tokens (original + synonyms) if enabled
         if self.use_stemming:
-            tokenised_query = self.text_stemmer(tokenised_query)
+            stemmed_tokens = self.text_stemmer(all_tokens)
             tokenized_exclusions = self.text_stemmer(exclude_tokens)
-
-        processed_query['tokens'] = tokenised_query
-        processed_query['exclude_tokens'] = tokenized_exclusions
+            processed_query['tokens'] = stemmed_tokens
+            processed_query['exclude_tokens'] = tokenized_exclusions
+        else:
+            processed_query['tokens'] = all_tokens
+            processed_query['exclude_tokens'] = exclude_tokens
+        
+        # Generate n-grams
         self.query_n_gram(processed_query)
 
         logging.info("Query processing completed in {}".format(datetime.datetime.now() - start_time))
         return processed_query
 
+    def get_synonyms_for_tokens(self, tokens):
+        """
+        Gets synonyms for tokens from ingredient_synonym_mapping.
+        
+        Args:
+            tokens (list): List of tokens to find synonyms for
+            
+        Returns:
+            list: List of synonym tokens (up to 3 per original token)
+        """
+        try:
+            all_synonyms = []
+            
+            # Load the ingredient synonym mapping from JSON file
+            with open(self.syn_path, 'r') as f:
+                ingredient_synonyms = json.load(f)
+            
+            # For each token in the query, find synonyms
+            for token in tokens:
+                if token in ingredient_synonyms:
+                    # Get top 3 synonyms (or fewer if less are available)
+                    token_synonyms = ingredient_synonyms[token][:3]
+                    all_synonyms.extend(token_synonyms)
+            
+            # Return unique synonyms
+            return list(set(all_synonyms))
+        
+        except Exception as e:
+            logging.error(f"Error getting synonyms: {str(e)}")
+            # If there's an error, return empty list
+            return []
     def process_query_ingredients(self, query, exclude_tokens):
 
         logging.info("Processing Query: {}".format(query))
