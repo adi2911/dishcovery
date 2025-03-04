@@ -11,6 +11,20 @@ export interface SearchResponse {
   isError: boolean;
 }
 
+// 1) Create a helper to map the string to numeric code.
+ function mapDietPreferenceToNumber(dietPreference: string): number {
+   switch (dietPreference) {
+     case 'vegan':
+       return 1;
+     case 'vegetarian':
+       return 2;
+     case 'gluten-free':
+       return 3;
+     default:
+       return 0;
+   }
+ }
+
 export async function performSearch(
   searchType: string,
   ingredients: string[],
@@ -23,21 +37,25 @@ export async function performSearch(
     let url = '';
     let requestData: any = {};
 
+    // 2) Use the helper function before sending dietPreference
+    const numericDietPref = mapDietPreferenceToNumber(dietPreference);
+
     if (searchType === 'ingredients') {
       url = `${CLOUD_RUN}/searchByIngredients`;
       requestData = {
         ingredients,
         exclude: exclusions,
-        dietPreference,
+       dietPreference: numericDietPref,
       };
     } else {
       url = `${CLOUD_RUN}/searchByText`;
       requestData = {
         text: searchText,
         exclude: exclusions,
-        dietPreference,
+        dietPreference: numericDietPref,
       };
     }
+
     const response = await axios.post(url, requestData, {
       params: {
         page,
@@ -72,17 +90,16 @@ export async function performSearch(
       perPage,
       totalResults,
       totalPages,
-      isError:false
+      isError: false,
     };
   } catch (error) {
-    console.log(">>>> catch is getting called")
     return {
       recipes: [],
       page: 0,
       perPage: 0,
-      totalPages:0,
-      totalResults:0,
-      isError:true
+      totalPages: 0,
+      totalResults: 0,
+      isError: true,
     };
   }
 }
