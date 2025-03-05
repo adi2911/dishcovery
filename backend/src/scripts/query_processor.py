@@ -46,10 +46,6 @@ class QueryProcessor:
             use_stopwords (bool, optional): Whether to remove stopwords (default: True)
             use_stemming (bool, optional): Whether to apply stemming (default: True)
         """
-        # 500 MB LRU for query-level cache on default DB=0
-        #self.query_cache = QueryCache(max_memory_bytes=524288000, do_config_set=True)
-        # 500 MB LRU for doc-level cache on DB=1
-        #self.doc_cache = DocCache(db=1, max_memory_bytes=524288000, do_config_set=True)
         self.stop_word_path = stop_word_path
         self.use_stopwords = use_stopwords
         self.use_stemming = use_stemming
@@ -65,6 +61,8 @@ class QueryProcessor:
         self.avg_doc_length = 170  # Approximate average document length (assumed)
         self.lmdb_path = get_relative_path("data","index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
         self.env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
+        self.syn_path = get_relative_path("api","ingredient_synonyms_mapping.json")
+
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
 
@@ -195,16 +193,17 @@ class QueryProcessor:
 
         # Inititalise processed query dict
         processed_query = {"original_query": query,
-                           # "processed_query": "", NOT REQUIRED
-                           "n_grams": [],  # remove underscore
-                           "synonyms": [],  # TO_DO
-                           "tokens": [],
-                           "exclude_tokens": exclude_tokens
-                           }
+                        # "processed_query": "", NOT REQUIRED
+                        "n_grams": [],  # remove underscore
+                        "synonyms": [],  # TO_DO
+                        "tokens": [],
+                        "exclude_tokens": exclude_tokens
+                        }
 
         processed_query['phrase_queries'] = self.extract_phrases(query)
         # processed_query['boolean_operators'] = self.extract_boolean_operators(query) NOT REQUIRED
 
+        # Clean and tokenize the query
         cleaned_query = self.text_cleaner(query)
         tokenised_query = self.text_tokenizer(cleaned_query)
         print("Initial exclude tokens: " + str(exclude_tokens))
@@ -214,18 +213,67 @@ class QueryProcessor:
 
         if len(tokenised_query) == 0:
             return "No tokens found"
+        
+        # Store the pre-stemmed tokens for synonym expansion
+        pre_stemmed_tokens = tokenised_query.copy()
+        
+        # Expand query with synonyms BEFORE stemming
+        synonyms = self.get_synonyms_for_tokens(pre_stemmed_tokens)
+        processed_query['synonyms'] = synonyms
+        
+        # Combine original tokens with synonyms for stemming
+        all_tokens = tokenised_query + synonyms
 
+        print("Query now:")
+        print(synonyms)
+        
+        # Apply stemming to all tokens (original + synonyms) if enabled
         if self.use_stemming:
-            tokenised_query = self.text_stemmer(tokenised_query)
+            stemmed_tokens = self.text_stemmer(all_tokens)
             tokenized_exclusions = self.text_stemmer(exclude_tokens)
-
-        processed_query['tokens'] = tokenised_query
-        processed_query['exclude_tokens'] = tokenized_exclusions
+            processed_query['tokens'] = stemmed_tokens
+            processed_query['exclude_tokens'] = tokenized_exclusions
+        else:
+            processed_query['tokens'] = all_tokens
+            processed_query['exclude_tokens'] = exclude_tokens
+        
+        # Generate n-grams
         self.query_n_gram(processed_query)
 
         logging.info("Query processing completed in {}".format(datetime.datetime.now() - start_time))
         return processed_query
 
+    def get_synonyms_for_tokens(self, tokens):
+        """
+        Gets synonyms for tokens from ingredient_synonym_mapping.
+        
+        Args:
+            tokens (list): List of tokens to find synonyms for
+            
+        Returns:
+            list: List of synonym tokens (up to 3 per original token)
+        """
+        try:
+            all_synonyms = []
+            
+            # Load the ingredient synonym mapping from JSON file
+            with open(self.syn_path, 'r') as f:
+                ingredient_synonyms = json.load(f)
+            
+            # For each token in the query, find synonyms
+            for token in tokens:
+                if token in ingredient_synonyms:
+                    # Get top 3 synonyms (or fewer if less are available)
+                    token_synonyms = ingredient_synonyms[token][:3]
+                    all_synonyms.extend(token_synonyms)
+            
+            # Return unique synonyms
+            return list(set(all_synonyms))
+        
+        except Exception as e:
+            logging.error(f"Error getting synonyms: {str(e)}")
+            # If there's an error, return empty list
+            return []
     def process_query_ingredients(self, query, exclude_tokens):
 
         logging.info("Processing Query: {}".format(query))
@@ -285,70 +333,6 @@ class QueryProcessor:
 
             #self.query_cache.set(query_cache_dict, ranked_docs)
             return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
-            """
-
-            for token in processed_query.get('tokens', []):
-                token_results = self.search_index(token)
-                if token_results:
-                    matching_docs.update(token_results.keys())
-
-            for ngram in processed_query.get('n_grams', []):
-                ngram = list(ngram)
-                threshold = 3 if len(ngram) == 2 else 5 if len(ngram) == 3 else None
-                if threshold is None:
-                    continue
-
-                token_results_map = {token: self.search_index(token) for token in ngram}
-                token_results_map.pop('___')
-                docs_for_ngram = set.intersection(
-                    *[set(results.keys()) for results in token_results_map.values() if results])
-
-                if not docs_for_ngram:
-                    continue
-
-                for doc_id in docs_for_ngram:
-                    positions_lists = [
-                        sorted(pos for pos_list in token_results_map[token][doc_id].values() for pos in pos_list)
-                        for token in ngram if doc_id in token_results_map[token]
-                    ]
-
-                    if len(positions_lists) == len(ngram) and self.tokens_in_proximity(positions_lists, threshold):
-                        matching_docs.add(doc_id)
-                        proximity_scores[doc_id] = 1 / (1 + threshold)
-
-                final_docs = matching_docs - exclude_docs
-                # bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
-                # tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
-
-                scores = self.bm25_tfidf_search(final_docs, processed_query["tokens"], 10000)
-                bm25_scores = dict(scores[0])
-                tfidf_scores = dict(scores[1])
-
-                # This could be used for normalising and using all three scores?
-                max_prox = max(proximity_scores.values(), default=1)
-                min_prox = min(proximity_scores.values(), default=0)
-                max_bm25 = max(bm25_scores.values(), default=1)
-                min_bm25 = min(bm25_scores.values(), default=0)
-                max_tfidf = max(tfidf_scores.values(), default=1)
-                min_tfidf = min(tfidf_scores.values(), default=0)
-
-                bm25_weight, tfidf_weight, proximity_weight = 0.5, 0.3, 0.2
-
-                ranked_docs = {
-                    doc_id: bm25_weight * (
-                            (bm25_scores.get(doc_id, min_bm25) - min_bm25) / (max_bm25 - min_bm25 + 1e-9)) +
-                            tfidf_weight * (
-                                    (tfidf_scores.get(doc_id, min_tfidf) - min_tfidf) / (
-                                    max_tfidf - min_tfidf + 1e-9)) +
-                            proximity_weight * (
-                                    (proximity_scores.get(doc_id, min_prox) - min_prox) / (
-                                    max_prox - min_prox + 1e-9))
-                        for doc_id in final_docs
-                }
-                # Store in query cache
-                self.query_cache.set(query_cache_dict, ranked_docs)
-                return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
-            """
         else:
             print("Ingredients-based search")
             token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
@@ -364,39 +348,6 @@ class QueryProcessor:
     def compute_idf(self, df, N):
         """Compute Inverse Document Frequency (IDF)"""
         return math.log((N - df + 0.5) / (df + 0.5) + 1)
-
-    """
-    # BM25 Search Function
-    def bm25_search(self, doc_set, query_terms, top_n=100):
-        env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
-        doc_scores = defaultdict(float)
-        doc_lengths = {}
-
-        with env.begin() as txn:
-            for term in query_terms:
-                key = term.encode('utf-8')
-                data = txn.get(key)
-
-                if data:
-                    term_data = pickle.loads(data)
-                    df = term_data.pop('___', 0)
-                    idf = self.compute_idf(df, self.N)
-
-                    for doc_id, fields in term_data.items():
-                        if doc_id not in doc_set:
-                            continue
-
-                        for field_id, positions in fields.items():
-                            term_freq = len(positions)
-                            doc_length = doc_lengths.get(doc_id, self.avg_doc_length)
-                            bm25_score = idf * ((term_freq * (self.k1 + 1)) /
-                                                (term_freq + self.k1 * (
-                                                        1 - self.b + self.b * (doc_length / self.avg_doc_length))))
-                            weight = self.FIELD_WEIGHTS.get(field_id, 1.0)
-                            doc_scores[doc_id] += bm25_score * weight
-
-        return sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
-    """
 
     def tfidf_search(self, doc_set, query_terms, top_n=10):
         # env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
@@ -792,7 +743,6 @@ class QueryProcessor:
     def get_recipe_from_store(self, paged_documents, diet_preference):
         start = time.time()
         document_ids = [doc[0] for doc in paged_documents]
-        # [(document_id, recipe_id), ...]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
 
         conn = self.conn
@@ -806,54 +756,29 @@ class QueryProcessor:
 
         start = time.time()
         final_recipes = []
-        #missing_recipe_ids = []
-        # check doc cache for each recipe_id
-        '''for rid in recipe_ids:
-            cached_doc = self.doc_cache.get_doc(rid)
-            if cached_doc:
-                logging.info(f"Doc-level cache HIT for recipe_id={rid}")
-                final_recipes.append(cached_doc)
-            else:
-                missing_recipe_ids.append(rid)'''
-
-        # if some recipe_ids are missing, fetch them from the DB
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
         db_recipes = cursor.fetchall()
 
-        final_recipes = [
-            {"id": r[0], "title": r[1], "url": r[2], "ingredients": r[3], "instructions": r[4]}
-            for r in db_recipes
-        ]
-
-        # for r in db_recipes:
-        #     recipe_dict = {
-        #             "id": r[0],
-        #             "url": r[2],
-        #             "title": r[1],
-        #             "ingredients": r[3],
-        #             "instructions": r[4]
-        #     }
-        #         # store in doc cache
-        #         #self.doc_cache.set_doc(r[0], recipe_dict)
-        #     final_recipes.append(recipe_dict)
-
-        print(f'RETRIEVE DOCS | Getting recipes:  {time.time() - start}')
-
+        for r in db_recipes:
+            recipe_dict = {
+                    "id": r[0],
+                    "url": r[2],
+                    "title": r[1],
+                    "ingredients": r[3],
+                    "instructions": r[4]
+            }
+            final_recipes.append(recipe_dict)
+        
         return final_recipes
 
 
     def get_selected_recipe_from_store(self, recipe_id):
-        # check doc cache
-        '''cached = self.doc_cache.get_doc(recipe_id)
-        if cached:
-            logging.info(f"Single-recipe doc cache HIT for recipe_id={recipe_id}")
-            return cached'''
-
-        # otherwise fetch from DB
         conn = self.conn
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
         recipe_details = cursor.fetchall()
+        if len(recipe_details)!=0:
+            print(f"fetched recipe from store sucessfully : {recipe_id}")
         if len(recipe_details) != 0:
             row = recipe_details[0]
             recipe_dict = {
@@ -869,20 +794,7 @@ class QueryProcessor:
             return "No recipe found"
 
 if __name__ == "__main__":
-    start = time.time()
-    stop_words_path = "data/stop_words_english.txt"
-    processor = QueryProcessor(stop_word_path=stop_words_path, use_stemming=True)
-
-    query = 'chicken curry AND "spicy sauce" NOT tomato'
-    processed_query = processor.process_query_text(query, [])
-
-    pprint.pprint(processed_query)
-    docs = processor.get_ranked_documents(processed_query, True)
-    print(docs)
-    recipes, time_taken_to_get_from_data_store = processor.get_recipe_from_store(docs, 'Vegetarian')
-    print("Time taken to get from data store = " + str(time_taken_to_get_from_data_store))
-    print("Number of recipes = " + str(len(recipes)))
-    print("Search took : " + str(time.time() - start))
+    pass
 
 
 

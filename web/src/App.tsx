@@ -4,12 +4,10 @@ import Header from "./components/Header";
 import RecipeDetail from "./components/RecipeDetails";
 import SearchComponent from "./components/SearchComponent";
 import { SearchProvider } from "./store/SearchContext";
-import { UserProvider } from "./store/UserContext";
 
 export default function App() {
   return (
     <BrowserRouter>
-      <UserProvider>
         <SearchProvider>
           <div
             className="min-h-screen bg-cover bg-center"
@@ -27,7 +25,6 @@ export default function App() {
             </div>
           </div>
         </SearchProvider>
-      </UserProvider>
     </BrowserRouter>
   );
 }

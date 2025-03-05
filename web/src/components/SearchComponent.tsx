@@ -14,6 +14,7 @@ const SearchComponent: React.FC = () => {
   // Pull searchState + setSearchState from your custom context
   const { searchState, setSearchState } = useSearch();
   const [timeTaken, setTimeTaken] = useState(0);
+
   const {
     results,
     currentPage,
@@ -23,9 +24,9 @@ const SearchComponent: React.FC = () => {
     ingredients,
     exclusions,
     searchText,
+    error
   } = searchState;
 
-  // Provide local callbacks that match (value: string) => void usage
   const setSearchType = (newVal: string) =>
     setSearchState((prev) => ({ ...prev, searchType: newVal }));
   const setDietPreference = (newVal: string) =>
@@ -70,39 +71,48 @@ const SearchComponent: React.FC = () => {
     setExclusions(exclusions.filter((_, i) => i !== index));
   };
 
-  const handleAddIngredientFromAutocomplete = (ingredient: string) => {
+  const handleAddIngredientFromAutoComplete = (ingredient: string) => {
     setIngredients([...ingredients, ingredient]);
   };
-
+  const handleAddExclusionFromAutoComplete = (exclusion: string) => {
+    setExclusions([...exclusions, exclusion]);
+  };
 
   function startTimer(): number {
     return performance.now();
   }
-  
-  function endTimer(startTime: number): number {
-    const endTime = performance.now();
-    const duration = endTime - startTime; // duration in milliseconds
-    return duration;
-  }
-  // Main search function
-  const handleSearch = async (page = 1) => {
 
+  function endTimer(startTime: number): number {
+    return performance.now() - startTime; 
+  }
+
+  const handleSearch = async (page = 1) => {
+    setSearchState((prev) => ({ ...prev, error: false }));
     const startTime = startTimer();
-    
-    const data: SearchResponse = await performSearch(
-      searchType,
-      ingredients,
-      exclusions,
-      dietPreference,
-      searchText,
-      page
-    );
-    setResults(data.recipes);
-    setCurrentPage(data.page);
-    setTotalPages(data.totalPages);
+
+    try {
+      const data: SearchResponse = await performSearch(
+        searchType,
+        ingredients,
+        exclusions,
+        dietPreference,
+        searchText,
+        page
+      );
+      if (data.isError || data.totalResults === 0) {
+      setSearchState((prev) => ({ ...prev, results:[], error: true }));
+
+        return;
+      }
+      setResults(data.recipes);
+      setCurrentPage(data.page);
+      setTotalPages(data.totalPages);
+    } catch (e) {
+      setSearchState((prev) => ({ ...prev, results:[], error: true }));
+    }
 
     const endTime = endTimer(startTime);
-    setTimeTaken(endTime)
+    setTimeTaken(endTime);
   };
 
   // Specifically triggers a “fresh” search at page=1
@@ -122,13 +132,11 @@ const SearchComponent: React.FC = () => {
     }
   };
 
-  // Clicking a recipe
   const handleRecipeClick = (recipeId: string) => {
     navigate(`/recipe/${recipeId}`);
   };
 
-  // Decide whether to show initial or results view
-  const hasSearched = results.length > 0;
+  const hasSearched = results.length > 0 || error;
 
   if (!hasSearched) {
     // -- INITIAL VIEW --
@@ -145,12 +153,8 @@ const SearchComponent: React.FC = () => {
             }
 
             const nameAttr = activeEl.getAttribute('name');
-            if (
-              nameAttr === 'ingredientInput' ||
-              nameAttr === 'exclusionInput'
-            ) {
-              // If there's typed text, let the input's own onKeyDown handle it => do nothing here
-              // If empty, trigger the search
+            if (nameAttr === 'ingredientInput' || nameAttr === 'exclusionInput') {
+              // If there's typed text, let input’s own onKeyDown handle it
               if (!activeEl.value.trim()) {
                 handleInitialSearch();
               }
@@ -278,13 +282,15 @@ const SearchComponent: React.FC = () => {
           </Menu>
         </div>
 
-        {/* -- Conditional Rendering: Text vs Ingredients -- */}
         {searchType === 'ingredients' ? (
           <div className="mb-6">
             <label className="label">Add Ingredients</label>
-
-            <AutoComplete onAddIngredient={handleAddIngredientFromAutocomplete} />
-
+            {/* Reuse AutoComplete for ingredients */}
+            <AutoComplete
+              onAddValue={handleAddIngredientFromAutoComplete}
+              inputName="ingredientInput"
+              placeholder="Type an ingredient and press Enter"
+            />
             <div className="ingredients-container">
               {ingredients.map((ingredient, index) => (
                 <div key={index} className="ingredient-item">
@@ -312,15 +318,13 @@ const SearchComponent: React.FC = () => {
           </div>
         )}
 
-        {/* -- Exclusions -- */}
+        {/* -- Exclusions now also use AutoComplete -- */}
         <div className="mb-6">
           <label className="label">Exclude These</label>
-          <input
-            type="text"
-            name="exclusionInput"
+          <AutoComplete
+            onAddValue={handleAddExclusionFromAutoComplete}
+            inputName="exclusionInput"
             placeholder="Type exclusions and press Enter"
-            onKeyDown={addExclusion}
-            className="input"
           />
           <div className="ingredients-container">
             {exclusions.map((ex, index) => (
@@ -349,7 +353,7 @@ const SearchComponent: React.FC = () => {
     // ------------------ RESULTS VIEW ------------------
     return (
       <ResultsComponent
-        timeTaken = {timeTaken}
+        timeTaken={timeTaken}
         searchType={searchType}
         setSearchType={setSearchType}
         dietPreference={dietPreference}
@@ -370,6 +374,7 @@ const SearchComponent: React.FC = () => {
         goToPrevPage={goToPrevPage}
         currentPageResults={results}
         handleRecipeClick={handleRecipeClick}
+        error={error}
       />
     );
   }

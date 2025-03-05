@@ -3,10 +3,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CLOUD_RUN } from '../store/constants';
 
 interface AutoCompleteProps {
-  onAddIngredient: (ingredient: string) => void;
+  onAddValue: (value: string) => void;
+  inputName: string;
+  placeholder: string;
 }
 
-const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
+const AutoComplete: React.FC<AutoCompleteProps> = ({
+  onAddValue,
+  inputName,
+  placeholder,
+}) => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -96,9 +102,9 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
           activeSuggestionIndex >= 0 &&
           activeSuggestionIndex < suggestions.length
         ) {
-          onAddIngredient(suggestions[activeSuggestionIndex]);
+          onAddValue(suggestions[activeSuggestionIndex]);
         } else if (suggestions.length > 0) {
-          onAddIngredient(suggestions[0]);
+          onAddValue(suggestions[0]);
         }
         setQuery('');
         setShowSuggestions(false);
@@ -129,7 +135,7 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
   };
 
   const handleSuggestionClick = (suggestion: string) => {
-    onAddIngredient(suggestion);
+    onAddValue(suggestion);
     setQuery('');
     setShowSuggestions(false);
     setSuggestions([]);
@@ -138,12 +144,11 @@ const AutoComplete: React.FC<AutoCompleteProps> = ({ onAddIngredient }) => {
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Add name="ingredientInput" so we know not to trigger global search */}
       <input
         type="text"
-        placeholder="Type an ingredient and press Enter"
+        placeholder={placeholder}
         className="input"
-        name="ingredientInput"
+        name={inputName}
         value={query}
         onChange={handleChange}
         onKeyDown={handleKeyDown}

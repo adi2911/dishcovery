@@ -1,3 +1,4 @@
 firestore-key.json
 *.mdb
 __pycache__
+flask_session

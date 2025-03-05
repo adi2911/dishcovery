@@ -1,10 +1,8 @@
-// SearchContext.tsx
 import React, { createContext, ReactNode, useContext, useState } from 'react';
 import { Recipe } from '../components/RecipeDetails';
 
 interface SearchState {
-  // all the info you'd like to persist
-  results: Recipe[];       
+  results: Recipe[];
   currentPage: number;
   totalPages: number;
   searchType: string;
@@ -12,6 +10,7 @@ interface SearchState {
   ingredients: string[];
   exclusions: string[];
   searchText: string;
+  error: boolean;
 }
 
 interface SearchContextType {
@@ -19,7 +18,6 @@ interface SearchContextType {
   setSearchState: React.Dispatch<React.SetStateAction<SearchState>>;
 }
 
-/** Default/initial search state */
 const initialSearchState: SearchState = {
   results: [],
   currentPage: 1,
@@ -29,11 +27,11 @@ const initialSearchState: SearchState = {
   ingredients: [],
   exclusions: [],
   searchText: '',
+  error: false, 
 };
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
 
-/** The provider that holds state for the entire app. */
 export const SearchProvider = ({ children }: { children: ReactNode }) => {
   const [searchState, setSearchState] = useState<SearchState>(initialSearchState);
 
@@ -44,7 +42,6 @@ export const SearchProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-/** Custom hook for consuming the context. */
 export const useSearch = () => {
   const context = useContext(SearchContext);
   if (!context) {
