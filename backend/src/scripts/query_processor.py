@@ -261,7 +261,6 @@ class QueryProcessor:
         if isText:
             print("Text-based search")
             ranked_docs = self.text_search(processed_query, exclude_docs)
-
             #self.query_cache.set(query_cache_dict, ranked_docs)
             if hasDietPreference:
                 return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:15000] # to see if there are enough options
