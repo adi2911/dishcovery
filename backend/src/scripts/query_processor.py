@@ -268,7 +268,7 @@ class QueryProcessor:
                 return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
         else:
             print("Ingredients-based search")
-        token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
+            token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
 
             token_doc_sets = [
                 set(results.keys()) for results in token_results_map.values() if results
@@ -399,16 +399,13 @@ class QueryProcessor:
                         if doc_id not in doc_set:
                             continue
 
-
-
+                        """
+                        is_vegan = (dietary_flags & 0b100) >> 2  # Extracts the third bit
+                        is_vegetarian = (dietary_flags & 0b010) >> 1  # Extracts the second bit
+                        is_gluten_free = (dietary_flags & 0b001)  # Extracts the first bit
+                        """
 
                         for field_id, positions in fields.items():
-                            if field_id == "dietary_flags":
-
-                                is_vegan = (dietary_flags & 0b100) >> 2  # Extracts the third bit
-                                is_vegetarian = (dietary_flags & 0b010) >> 1  # Extracts the second bit
-                                is_gluten_free = (dietary_flags & 0b001)  # Extracts the first bit
-
                             tf = len(positions)
                             weight = self.FIELD_WEIGHTS.get(field_id, 1.0)
                             doc_length = doc_lengths.get(doc_id, self.avg_doc_length)
