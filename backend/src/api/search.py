@@ -79,7 +79,7 @@ def search_by_text():
     # If first page request, process search and store results in session
     # If not, retrieve recipes from session
     if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, False)
+        ranked_documents = processor.get_ranked_documents(processed_query, True)
         paginated_results = processor.get_recipe_from_store(ranked_documents[:end_idx], diet_preference)
         session['ranked_documents'] = ranked_documents
         session.modified = True
@@ -88,7 +88,7 @@ def search_by_text():
             ranked_documents = session.get('ranked_documents', [])
             paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, False)
+            ranked_documents = processor.get_ranked_documents(processed_query, True)
             paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
 
     if len(ranked_documents) == 0:
