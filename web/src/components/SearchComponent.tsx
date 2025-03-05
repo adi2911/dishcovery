@@ -100,7 +100,7 @@ const SearchComponent: React.FC = () => {
         page
       );
       if (data.isError || data.totalResults === 0) {
-      setSearchState((prev) => ({ ...prev, error: true }));
+      setSearchState((prev) => ({ ...prev, results:[], error: true }));
 
         return;
       }
@@ -108,8 +108,7 @@ const SearchComponent: React.FC = () => {
       setCurrentPage(data.page);
       setTotalPages(data.totalPages);
     } catch (e) {
-      setSearchState((prev) => ({ ...prev, error: true }));
-
+      setSearchState((prev) => ({ ...prev, results:[], error: true }));
     }
 
     const endTime = endTimer(startTime);
