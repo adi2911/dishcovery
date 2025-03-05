@@ -13,3 +13,5 @@ lmdb
 cloud-sql-python-connector
 pg8000
 msgpack
+numpy
+numba
