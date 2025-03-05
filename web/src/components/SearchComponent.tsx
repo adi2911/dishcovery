@@ -1,6 +1,6 @@
 import { Menu, Transition } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/20/solid';
-import React, { Fragment, useState } from 'react';
+import React, { Fragment, useRef, useState } from 'react'; // <-- useRef imported
 import { useNavigate } from 'react-router-dom';
 import { performSearch, SearchResponse } from '../service/searchService';
 import { useSearch } from '../store/SearchContext';
@@ -10,8 +10,6 @@ import ResultsComponent from './ResultsComponent';
 
 const SearchComponent: React.FC = () => {
   const navigate = useNavigate();
-
-  // Pull searchState + setSearchState from your custom context
   const { searchState, setSearchState } = useSearch();
   const [timeTaken, setTimeTaken] = useState(0);
 
@@ -46,6 +44,9 @@ const SearchComponent: React.FC = () => {
     setSearchState((prev) => ({ ...prev, currentPage: page }));
   const setTotalPages = (tp: number) =>
     setSearchState((prev) => ({ ...prev, totalPages: tp }));
+
+  // Track the time of last search to throttle calls
+  const lastSearchTimeRef = useRef<number>(0);
 
   // Handlers for adding/removing ingredients
   const addIngredient = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -83,10 +84,19 @@ const SearchComponent: React.FC = () => {
   }
 
   function endTimer(startTime: number): number {
-    return performance.now() - startTime; 
+    return performance.now() - startTime;
   }
 
   const handleSearch = async (page = 1) => {
+    // --- ADDED THROTTLING CHECK ---
+    const now = performance.now();
+    if (now - lastSearchTimeRef.current < 500) {
+      alert('Please wait for request to process');
+      return;
+    }
+    lastSearchTimeRef.current = now;
+    // --------------------------------
+
     setSearchState((prev) => ({ ...prev, error: false }));
     const startTime = startTimer();
 
@@ -99,9 +109,9 @@ const SearchComponent: React.FC = () => {
         searchText,
         page
       );
-      if (data.isError || data.totalResults === 0) {
-      setSearchState((prev) => ({ ...prev, results:[], error: true }));
 
+      if (data.isError || data.totalResults === 0) {
+        setSearchState((prev) => ({ ...prev, results:[], error: true }));
         return;
       }
       setResults(data.recipes);
@@ -154,12 +164,10 @@ const SearchComponent: React.FC = () => {
 
             const nameAttr = activeEl.getAttribute('name');
             if (nameAttr === 'ingredientInput' || nameAttr === 'exclusionInput') {
-              // If there's typed text, let input’s own onKeyDown handle it
               if (!activeEl.value.trim()) {
                 handleInitialSearch();
               }
             } else {
-              // Not an ingredient or exclusion field => do the search
               handleInitialSearch();
             }
           }
@@ -173,9 +181,7 @@ const SearchComponent: React.FC = () => {
           <Menu as="div" className="relative inline-block w-full">
             <div>
               <Menu.Button className="dropdown-button">
-                {searchType === 'text'
-                  ? 'Search by Text'
-                  : 'Search by Ingredients'}
+                {searchType === 'text' ? 'Search by Text' : 'Search by Ingredients'}
                 <ChevronDownIcon className="w-5 h-5 ml-2 inline" />
               </Menu.Button>
             </div>
@@ -222,8 +228,7 @@ const SearchComponent: React.FC = () => {
               <Menu.Button className="dropdown-button">
                 {dietPreference === 'none'
                   ? 'No Preference'
-                  : dietPreference.charAt(0).toUpperCase() +
-                    dietPreference.slice(1)}
+                  : dietPreference.charAt(0).toUpperCase() + dietPreference.slice(1)}
                 <ChevronDownIcon className="w-5 h-5 ml-2 inline" />
               </Menu.Button>
             </div>
@@ -285,7 +290,6 @@ const SearchComponent: React.FC = () => {
         {searchType === 'ingredients' ? (
           <div className="mb-6">
             <label className="label">Add Ingredients</label>
-            {/* Reuse AutoComplete for ingredients */}
             <AutoComplete
               onAddValue={handleAddIngredientFromAutoComplete}
               inputName="ingredientInput"
