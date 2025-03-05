@@ -9,7 +9,6 @@ import logging
 import google.auth
 import os
 import lmdb
-import pickle
 import json
 import math
 from collections import defaultdict
@@ -18,15 +17,24 @@ import json
 import google.cloud.secretmanager as secretmanager
 from google.cloud.sql.connector import Connector
 from cache_utils import QueryCache, DocCache
-
+import numpy as np
+import math
+import pickle
+from collections import defaultdict
+import numba
+import cProfile
+import pstats
+import heapq
+import msgpack
 from global_path import get_relative_path
+
+profiler = cProfile.Profile()
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="{} : %(asctime)s - %(levelname)s : %(message)s".format("Query Processing Module")
 )
-
 
 class QueryProcessor:
     def __init__(self, stop_word_path=None, use_stopwords=True, use_stemming=True):
@@ -45,6 +53,9 @@ class QueryProcessor:
         self.stop_word_path = stop_word_path
         self.use_stopwords = use_stopwords
         self.use_stemming = use_stemming
+        # Cache to avoid repeated LMDB lookups.
+        self.token_cache = OrderedDict()
+        self.cache_limit = 10000
         self.stop_words_set = self._load_stopwords() if use_stopwords and stop_word_path else set()
         self.stemmer = Stemmer.Stemmer("english")
         self.FIELD_WEIGHTS = {0: 1.5, 1: 1.2, 2: 1.0}
@@ -53,6 +64,7 @@ class QueryProcessor:
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
         self.lmdb_path = get_relative_path("data","index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
+        self.env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
 
@@ -253,18 +265,23 @@ class QueryProcessor:
         # 1 - Get exclude tokens' document IDs
         exclude_docs = set()
         print(processed_query)
+
         for token in processed_query.get('exclude_tokens', []):
             token_results = self.search_index(token)
             print("Token results: {}".format(token_results))
             if token_results:
                 exclude_docs.update(token_results.keys())
         print("Excluded documents: {}".format(exclude_docs))
+
+
         matching_docs = set()
         proximity_scores = defaultdict(float)
 
         if isText:
             print("Text-based search")
+            start = time.time()
             ranked_docs = self.text_search(processed_query, exclude_docs)
+            print(f'RANKED DOCS| time to get ranked docs:  {time.time() - start}')
 
             #self.query_cache.set(query_cache_dict, ranked_docs)
             return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
@@ -382,18 +399,18 @@ class QueryProcessor:
     """
 
     def tfidf_search(self, doc_set, query_terms, top_n=10):
-        env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
+        # env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
         doc_scores = defaultdict(float)
 
-        with env.begin() as txn:
+        with self.env.begin() as txn:
             for term in query_terms:
                 key = term.encode('utf-8')
                 data = txn.get(key)
 
                 if data:
-                    term_data = pickle.loads(data)
+                    term_data = msgpack.unpackb(data, raw=False, strict_map_key=False)
                     df = term_data.pop('___', 0)
-
+                    # Why are we iterating over every document, we can just iterate the doc_set adn get the doc from there.
                     for doc_id, fields in term_data.items():
                         if doc_id not in doc_set:
                             continue
@@ -406,52 +423,193 @@ class QueryProcessor:
 
         return sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
 
+    
     def compute_tfidf(self, tf, df, N):
         if tf == 0 or df == 0:
             return 0
         return (1 + math.log10(tf)) * math.log10(N / df)
 
+    def get_token_result(self, token, txn):
+        # Try to get the token result from the cache.
+        cached_result = self.token_cache.get(token)
+        if cached_result is not None:
+            # Move this token to the end to mark it as recently used.
+            self.token_cache.move_to_end(token)
+            return cached_result
+
+        # If not cached, fetch the result.
+        result = self.search_index(token, txn)
+        if result:
+            result.pop('___', None)  # Clean up if necessary.
+        # Add the result to the cache.
+        self.token_cache[token] = result
+
+        # If the cache size exceeds the limit, remove the least recently used token.
+        if len(self.token_cache) > self.cache_limit:
+            self.token_cache.popitem(last=False)
+        return result
+    """
+    # def text_search(self, processed_query, exclude_docs):
+    #     matching_docs = set()
+    #     doc_scores_bm25 = defaultdict(float)
+    #     doc_scores_tfidf = defaultdict(float)
+    #     proximity_scores = defaultdict(float)
+
+    #     start = time.time()
+    #     with self.env.begin() as txn:
+    #         for token in processed_query.get('tokens', []):
+    #             token_results = self.search_index(token, txn)
+    #             # Updated to store bm25 and tfidf as well
+    #             token_results.pop('___')
+    #             if token_results:
+    #                 matching_docs.update(token_results.keys())
+    #                 for doc_id in token_results.keys():
+    #                     doc_scores_bm25[doc_id] += token_results[doc_id]['bm25']
+    #                     doc_scores_tfidf[doc_id] += token_results[doc_id]['tfidf']
+
+    #         for ngram in processed_query.get('n_grams', []):
+    #             ngram = list(ngram)
+    #             threshold = 3 if len(ngram) == 2 else 5 if len(ngram) == 3 else None
+    #             if threshold is None:
+    #                 continue
+
+    #             token_results_map = {token: self.search_index(token, txn) for token in ngram}
+    #             token_results_map.pop('___')
+    #             docs_for_ngram = set.intersection(
+    #                 *[set(results.keys()) for results in token_results_map.values() if results])
+
+    #             if not docs_for_ngram:
+    #                 continue
+
+    #             for doc_id in docs_for_ngram:
+    #                 positions_lists = [
+    #                     sorted(pos for pos_list in token_results_map[token][doc_id].values() for pos in pos_list)
+    #                     for token in ngram if doc_id in token_results_map[token]
+    #                 ]
+
+    #                 if len(positions_lists) == len(ngram) and self.tokens_in_proximity(positions_lists, threshold):
+    #                     matching_docs.add(doc_id)
+    #                     for token in ngram:
+    #                         if doc_id in token_results_map[token] and doc_id != '___':
+    #                             doc_scores_bm25[doc_id] += token_results[doc_id]['bm25']
+    #                             doc_scores_tfidf[doc_id] += token_results[doc_id]['tfidf']
+    #                     proximity_scores[doc_id] = 1 / (1 + threshold)
+
+    #         final_docs = matching_docs #- exclude_docs   --> TEMP REMOVED
+    #         # bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
+    #         # tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
+    #         print(f'TEXT SEARCH | Searching:  {time.time() - start}')
+            
+    #         start = time.time()
+    #         # scores = self.bm25_tfidf_search(final_docs, processed_query["tokens"], txn, 10000)
+    #         bm25_scores = dict(self.get_top_n_scores(doc_scores_bm25, 10000))
+    #         tfidf_scores = dict(self.get_top_n_scores(doc_scores_tfidf, 10000))
+    #         print(f'TEXT SEARCH | Ranking:  {time.time() - start}')
+
+    #     # This could be used for normalising and using all three scores?
+    #     max_prox = max(proximity_scores.values(), default=1)
+    #     min_prox = min(proximity_scores.values(), default=0)
+    #     max_bm25 = max(bm25_scores.values(), default=1)
+    #     min_bm25 = min(bm25_scores.values(), default=0)
+    #     max_tfidf = max(tfidf_scores.values(), default=1)
+    #     min_tfidf = min(tfidf_scores.values(), default=0)
+
+    #     bm25_weight, tfidf_weight, proximity_weight = 0.5, 0.3, 0.2
+
+    #     start = time.time()
+    #     ranked_docs = {
+    #         doc_id: bm25_weight * (
+    #                 (bm25_scores.get(doc_id, min_bm25) - min_bm25) / (max_bm25 - min_bm25 + 1e-9)) +
+    #                 tfidf_weight * (
+    #                     (tfidf_scores.get(doc_id, min_tfidf) - min_tfidf) / (
+    #                         max_tfidf - min_tfidf + 1e-9)) +
+    #                 proximity_weight * (
+    #                     (proximity_scores.get(doc_id, min_prox) - min_prox) / (
+    #                         max_prox - min_prox + 1e-9))
+    #             for doc_id in final_docs
+    #     }
+    #     print(f'TEXT SEARCH | Merging Ranks:  {time.time() - start}')
+    #     # Store in query cache
+    #     print("length of ranked_docs in text search: " + str(len(ranked_docs)))
+    #     return ranked_docs
+    """  
     def text_search(self, processed_query, exclude_docs):
         matching_docs = set()
+        doc_scores_bm25 = defaultdict(float)
+        doc_scores_tfidf = defaultdict(float)
         proximity_scores = defaultdict(float)
-        for token in processed_query.get('tokens', []):
-            token_results = self.search_index(token)
-            if token_results:
-                matching_docs.update(token_results.keys())
 
-        for ngram in processed_query.get('n_grams', []):
-            ngram = list(ngram)
-            threshold = 3 if len(ngram) == 2 else 5 if len(ngram) == 3 else None
-            if threshold is None:
-                continue
+        deserialisation_time = 0
+        start = time.time()
+        with self.env.begin() as txn:
+            # Process individual tokens using the token cache.
+            for token in processed_query.get('tokens', []):
+                start_d = time.time()
+                token_results = self.get_token_result(token, txn)
+                deserialisation_time += time.time() - start_d
+                if token_results:
+                    matching_docs.update(token_results.keys())
+                    for doc_id, scores in token_results.items():
+                        doc_scores_bm25[doc_id] += scores.get('bm25', 0)
+                        doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
 
-            token_results_map = {token: self.search_index(token) for token in ngram}
-            token_results_map.pop('___')
-            docs_for_ngram = set.intersection(
-                *[set(results.keys()) for results in token_results_map.values() if results])
+            # Process n-grams similarly...
+            for ngram in processed_query.get('n_grams', []):
+                ngram_tokens = list(ngram)
+                threshold = 3 if len(ngram_tokens) == 2 else 5 if len(ngram_tokens) == 3 else None
+                if threshold is None:
+                    continue
 
-            if not docs_for_ngram:
-                continue
+                token_results_map = {}
+                valid_ngram = True
+                for token in ngram_tokens:
+                    start_d = time.time()
+                    result = self.get_token_result(token, txn)
+                    deserialisation_time += time.time() - start_d
+                    if not result:
+                        valid_ngram = False
+                        break
+                    token_results_map[token] = result
 
-            for doc_id in docs_for_ngram:
-                positions_lists = [
-                    sorted(pos for pos_list in token_results_map[token][doc_id].values() for pos in pos_list)
-                    for token in ngram if doc_id in token_results_map[token]
-                ]
+                if not valid_ngram or len(token_results_map) != len(ngram_tokens):
+                    continue
 
-                if len(positions_lists) == len(ngram) and self.tokens_in_proximity(positions_lists, threshold):
-                    matching_docs.add(doc_id)
-                    proximity_scores[doc_id] = 1 / (1 + threshold)
+                docs_for_ngram = set.intersection(*(set(res.keys()) for res in token_results_map.values()))
+                if not docs_for_ngram:
+                    continue
 
-        final_docs = matching_docs - exclude_docs
-        # bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
-        # tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
+                for doc_id in docs_for_ngram:
+                    positions_lists = []
+                    valid_doc = True
+                    for token in ngram_tokens:
+                        token_doc = token_results_map[token].get(doc_id)
+                        if not token_doc:
+                            valid_doc = False
+                            break
+                        pos_list = sorted(pos for positions in token_doc.values() for pos in positions)
+                        positions_lists.append(pos_list)
+                    if not valid_doc or len(positions_lists) != len(ngram_tokens):
+                        continue
 
-        scores = self.bm25_tfidf_search(final_docs, processed_query["tokens"], 10000)
-        bm25_scores = dict(scores[0])
-        tfidf_scores = dict(scores[1])
+                    if self.tokens_in_proximity(positions_lists, threshold):
+                        matching_docs.add(doc_id)
+                        for token in ngram_tokens:
+                            scores = token_results_map[token].get(doc_id, {})
+                            doc_scores_bm25[doc_id] += scores.get('bm25', 0)
+                            doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
+                        proximity_scores[doc_id] = 1 / (1 + threshold)
 
-        # This could be used for normalising and using all three scores?
+            final_docs = matching_docs - exclude_docs
+            print(f'TEXT SEARCH | Searching: {time.time() - start}')
+            print(f'TEXT SEARCH | Deserialisation: {deserialisation_time}')
+
+            start = time.time()
+            bm25_scores = self.get_top_n_scores(doc_scores_bm25, 10000)
+            tfidf_scores = self.get_top_n_scores(doc_scores_tfidf, 10000)
+            print(f'TEXT SEARCH | Ranking: {time.time() - start}')
+
+        start = time.time()
+        # Normalisation and merging of scores...
         max_prox = max(proximity_scores.values(), default=1)
         min_prox = min(proximity_scores.values(), default=0)
         max_bm25 = max(bm25_scores.values(), default=1)
@@ -461,58 +619,91 @@ class QueryProcessor:
 
         bm25_weight, tfidf_weight, proximity_weight = 0.5, 0.3, 0.2
 
-        ranked_docs = {
-            doc_id: bm25_weight * (
-                    (bm25_scores.get(doc_id, min_bm25) - min_bm25) / (max_bm25 - min_bm25 + 1e-9)) +
-                    tfidf_weight * (
-                        (tfidf_scores.get(doc_id, min_tfidf) - min_tfidf) / (
-                            max_tfidf - min_tfidf + 1e-9)) +
-                    proximity_weight * (
-                        (proximity_scores.get(doc_id, min_prox) - min_prox) / (
-                            max_prox - min_prox + 1e-9))
-                for doc_id in final_docs
-        }
-        # Store in query cache
+        # Convert the final_docs set to a NumPy array
+        doc_ids = np.array(list(final_docs))
+
+        # Create arrays of scores with fallback defaults.
+        bm25_arr = np.array([bm25_scores.get(doc_id, min_bm25) for doc_id in doc_ids])
+        tfidf_arr = np.array([tfidf_scores.get(doc_id, min_tfidf) for doc_id in doc_ids])
+        prox_arr = np.array([proximity_scores.get(doc_id, min_prox) for doc_id in doc_ids])
+
+        # Vectorized normalization (adding a small constant to avoid division by zero)
+        norm_bm25 = (bm25_arr - min_bm25) / (max_bm25 - min_bm25 + 1e-9)
+        norm_tfidf = (tfidf_arr - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)
+        norm_prox  = (prox_arr - min_prox) / (max_prox - min_prox + 1e-9)
+
+        # Compute the weighted sum for each document.
+        weighted_scores = (bm25_weight * norm_bm25 +
+                        tfidf_weight * norm_tfidf +
+                        proximity_weight * norm_prox)
+
+        # Convert the results back into a dictionary.
+        ranked_docs = dict(zip(doc_ids, weighted_scores))
+        print(f'TEXT SEARCH | Merging Ranks: {time.time() - start}')
         print("length of ranked_docs in text search: " + str(len(ranked_docs)))
         return ranked_docs
 
-    def bm25_tfidf_search(self, doc_set, query_terms, top_n=100):
-        env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
+
+
+    def get_top_n_scores(self, doc_scores, top_n):
+        """Returns the top N document scores sorted in descending order."""
+
+        if not doc_scores:  # Handle empty dictionary case
+            return []
+
+        n = len(doc_scores)
+        # Use np.fromiter to directly create the arrays without creating intermediate lists.
+        keys = np.fromiter(doc_scores.keys(), dtype=object, count=n)
+        values = np.fromiter(doc_scores.values(), dtype=np.float64, count=n)
+
+        # Adjust top_n if it's larger than available scores
+        top_n = min(top_n, len(values))
+
+        top_indices = np.argpartition(-values, top_n)[:top_n]  # Partial sort (O(N))
+        sorted_indices = top_indices[np.argsort(-values[top_indices])]  # Sort only top_n (O(k log k))
+
+        return dict(zip(keys[sorted_indices], values[sorted_indices]))
+
+    def bm25_tfidf_search(self, doc_set, query_terms, txn, top_n=100):
+        """
+        Optimized BM25 and TF-IDF search function
+        """
+        start = time.time()
         doc_scores_bm25 = defaultdict(float)
         doc_scores_tfidf = defaultdict(float)
-        doc_lengths = {}
+        # You may replace this with a precomputed mapping of doc lengths.
+        doc_lengths = {}  
+        doc_set.discard('___')
 
-        with env.begin() as txn:
-            for term in query_terms:
-                key = term.encode('utf-8')
-                data = txn.get(key)
+        for term in query_terms:
+            start = time.time()
+            key = term.encode('utf-8')
+            data = txn.get(key)
+            if data:
+                term_data = msgpack.unpackb(data, raw=False, strict_map_key=False)
+                # '___' holds the document frequency for the term.
+                # df = term_data.pop('___', 0)
+                # idf = self.compute_idf(df, self.N)
 
-                if data:
-                    term_data = pickle.loads(data)
-                    df = term_data.pop('___', 0)
-                    idf = self.compute_idf(df, self.N)
-
-                    for doc_id, fields in term_data.items():
-                        if doc_id not in doc_set:
-                            continue
-
-                        for field_id, positions in fields.items():
-                            tf = len(positions)
-                            weight = self.FIELD_WEIGHTS.get(field_id, 1.0)
-                            doc_length = doc_lengths.get(doc_id, self.avg_doc_length)
-
-                            bm25_score = idf * ((tf * (self.k1 + 1)) /
-                                                (tf + self.k1 * (
-                                                        1 - self.b + self.b * (doc_length / self.avg_doc_length))))
-                            tfidf_score = self.compute_tfidf(tf, df, self.N)
-
-                            doc_scores_tfidf[doc_id] += tfidf_score * weight
-                            doc_scores_bm25[doc_id] += bm25_score * weight
-
-        return [sorted(doc_scores_bm25.items(), key=lambda x: x[1], reverse=True)[:top_n], sorted(doc_scores_tfidf.items(), key=lambda x: x[1], reverse=True)[:top_n]]
+                # loop through doc_set only.
+                print(f'BM25 | begin:  {time.time() - start}')
+                start = time.time()
+                for doc_id in doc_set:
+                    # if doc_id == "___":
+                    #     continue
+                    if doc_id in term_data:
+                        doc_scores_bm25[doc_id] += term_data[doc_id]['bm25']
+                        doc_scores_tfidf[doc_id] += term_data[doc_id]['tfidf']
+                print(f'BM25 | retrieving:  {time.time() - start}')
+                
+        start = time.time()
+        # Get top N results for BM25 and TF-IDF
+        ranked_bm25 = self.get_top_n_scores(doc_scores_bm25, top_n)
+        ranked_tfidf = self.get_top_n_scores(doc_scores_tfidf, top_n)
+        print(f'BM25 | sorting:  {time.time() - start}')
+        return [ranked_bm25, ranked_tfidf]
                                                            
 
-       
 
     def tokens_in_proximity(self, positions_lists, threshold):
         """
@@ -526,7 +717,7 @@ class QueryProcessor:
                 return True
         return False
 
-    def search_index(self, token):
+    def search_index(self, token, txn):
         """
         This method will read from the lmdb inverted index and return list of documents that have the token,
         the field_id and the position of the token in the inverted index.
@@ -534,17 +725,16 @@ class QueryProcessor:
         index is stored in lmdb
         """
 
-        env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
+        # env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
 
-        with env.begin() as txn:
-            key = token.encode('utf-8')
-            data = txn.get(key)
+        key = token.encode('utf-8')
+        data = txn.get(key)
 
-            if data:
-                term_data = pickle.loads(data)  # {doc_id: {field_id: [positions]}}
-                return term_data
-            else:
-                return None
+        if data:
+            term_data = msgpack.unpackb(data, raw=False, strict_map_key=False)  # {doc_id: {field_id: [positions]}}
+            return term_data
+        else:
+            return None
 
     def get_tfidf_score(self, token):
         """
@@ -600,6 +790,7 @@ class QueryProcessor:
         return conn
 
     def get_recipe_from_store(self, paged_documents, diet_preference):
+        start = time.time()
         document_ids = [doc[0] for doc in paged_documents]
         # [(document_id, recipe_id), ...]
         query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
@@ -611,7 +802,9 @@ class QueryProcessor:
         cursor.execute(query, (document_ids,))
         mappings = cursor.fetchall()
         recipe_ids = [doc[1] for doc in mappings]
+        print(f'RETRIEVE DOCS | Getting maps:  {time.time() - start}')
 
+        start = time.time()
         final_recipes = []
         #missing_recipe_ids = []
         # check doc cache for each recipe_id
@@ -627,22 +820,26 @@ class QueryProcessor:
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
         db_recipes = cursor.fetchall()
 
-        for r in db_recipes:
-            recipe_dict = {
-                    "id": r[0],
-                    "url": r[2],
-                    "title": r[1],
-                    "ingredients": r[3],
-                    "instructions": r[4]
-            }
-                # store in doc cache
-                #self.doc_cache.set_doc(r[0], recipe_dict)
-            final_recipes.append(recipe_dict)
+        final_recipes = [
+            {"id": r[0], "title": r[1], "url": r[2], "ingredients": r[3], "instructions": r[4]}
+            for r in db_recipes
+        ]
 
-        end_time = time.time()
-        conn.close()
+        # for r in db_recipes:
+        #     recipe_dict = {
+        #             "id": r[0],
+        #             "url": r[2],
+        #             "title": r[1],
+        #             "ingredients": r[3],
+        #             "instructions": r[4]
+        #     }
+        #         # store in doc cache
+        #         #self.doc_cache.set_doc(r[0], recipe_dict)
+        #     final_recipes.append(recipe_dict)
 
-        return final_recipes, end_time - start_time
+        print(f'RETRIEVE DOCS | Getting recipes:  {time.time() - start}')
+
+        return final_recipes
 
 
     def get_selected_recipe_from_store(self, recipe_id):
@@ -654,8 +851,6 @@ class QueryProcessor:
 
         # otherwise fetch from DB
         conn = self.conn
-
-
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
         recipe_details = cursor.fetchall()
