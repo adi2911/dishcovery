@@ -606,6 +606,11 @@ class QueryProcessor:
         # Use np.fromiter to directly create the arrays without creating intermediate lists.
         keys = np.fromiter(doc_scores.keys(), dtype=object, count=n)
         values = np.fromiter(doc_scores.values(), dtype=np.float64, count=n)
+        
+        # If top_n >= n, we want *all* scores, so do a full sort:
+        if top_n >= n:
+            sorted_indices = np.argsort(-values)  # Sort descending
+            return dict(zip(keys[sorted_indices], values[sorted_indices]))
 
         # Adjust top_n if it's larger than available scores
         top_n = min(top_n, len(values))
