@@ -18,7 +18,8 @@ def search_by_ingredients():
     print(f"data : {data}")
     ingredients = data.get('ingredients', [])
     exclude = data.get('exclude', [])
-    diet_preference = data.get('dietPreference', 'none')
+    diet_preference = data.get('dietPreference', 0)
+    print(f"SEARCHED BY INGREDIENTS : {ingredients} , exluded ingredients are : {exclude} , diet_preference is : {diet_preference}")
     if diet_preference != 0:
         hasDietPreference = True
     else:
@@ -44,7 +45,6 @@ def search_by_ingredients():
     # Get the QueryProcessor instance from app config
     processor = app.config['query_processor']
     processed_query = processor.process_query_ingredients(ingredients, exclude)
-    diet_preference = 0 # hardcoding for test
 
     if page == 1:
         ranked_documents = processor.get_ranked_documents(processed_query, False, hasDietPreference)
@@ -103,8 +103,8 @@ def search_by_text():
     data = request.json
     text = data.get('text', '')
     exclude = data.get('exclude', [])
-    diet_preference = data.get('dietPreference', 'none')
-    diet_preference = 3 #hardcoded for testing
+    diet_preference = data.get('dietPreference', 0)
+    print(f"SEARCHED BY TEXT : {text} , exluded ingredients are : {exclude} , diet_preference is : {diet_preference}")
     if diet_preference != 0:
         hasDietPreference = True
     else:
