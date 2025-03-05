@@ -263,21 +263,21 @@ class QueryProcessor:
             ranked_docs = self.text_search(processed_query, exclude_docs)
             #self.query_cache.set(query_cache_dict, ranked_docs)
             if hasDietPreference:
-                return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:15000] # to see if there are enough options
+                return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1500] # to see if there are enough options
             else:
-                return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:10000]
+                return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
         else:
             print("Ingredients-based search")
-            token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
+        token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
 
             token_doc_sets = [
                 set(results.keys()) for results in token_results_map.values() if results
             ]
             matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
             if hasDietPreference:
-                ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 10000)
+                ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 1000)
             else:
-                ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 15000)
+                ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 1500)
             return ranked_docs
 
 
@@ -351,7 +351,7 @@ class QueryProcessor:
         # bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
         # tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
 
-        scores = self.bm25_tfidf_search(final_docs, processed_query["tokens"], 10000)
+        scores = self.bm25_tfidf_search(final_docs, processed_query["tokens"], 1000)
         bm25_scores = dict(scores[0])
         tfidf_scores = dict(scores[1])
 
@@ -377,7 +377,6 @@ class QueryProcessor:
                 for doc_id in final_docs
         }
         # Store in query cache
-        print("length of ranked_docs in text search: " + str(len(ranked_docs)))
         return ranked_docs
 
     def bm25_tfidf_search(self, doc_set, query_terms, top_n=100):
@@ -400,7 +399,16 @@ class QueryProcessor:
                         if doc_id not in doc_set:
                             continue
 
+
+
+
                         for field_id, positions in fields.items():
+                            if field_id == "dietary_flags":
+
+                                is_vegan = (dietary_flags & 0b100) >> 2  # Extracts the third bit
+                                is_vegetarian = (dietary_flags & 0b010) >> 1  # Extracts the second bit
+                                is_gluten_free = (dietary_flags & 0b001)  # Extracts the first bit
+
                             tf = len(positions)
                             weight = self.FIELD_WEIGHTS.get(field_id, 1.0)
                             doc_length = doc_lengths.get(doc_id, self.avg_doc_length)
@@ -414,9 +422,6 @@ class QueryProcessor:
                             doc_scores_bm25[doc_id] += bm25_score * weight
 
         return [sorted(doc_scores_bm25.items(), key=lambda x: x[1], reverse=True)[:top_n], sorted(doc_scores_tfidf.items(), key=lambda x: x[1], reverse=True)[:top_n]]
-                                                           
-
-       
 
     def tokens_in_proximity(self, positions_lists, threshold):
         """
@@ -525,7 +530,7 @@ class QueryProcessor:
         cursor = conn.cursor()
         cursor.execute(base_query, tuple(params))
         mappings = cursor.fetchall()  # List of (document_id, recipe_id)
-        recipe_ids = [recipe_id[1] for recipe_id in mappings][:10000]
+        recipe_ids = [recipe_id[1] for recipe_id in mappings][:1000]
         return recipe_ids
 
     def get_recipe_from_store(self, recipe_ids, diet_preference):
