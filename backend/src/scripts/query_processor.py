@@ -335,14 +335,55 @@ class QueryProcessor:
             return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
         else:
             print("Ingredients-based search")
-            token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
+            doc_scores_bm25 = defaultdict(float)
+            doc_scores_tfidf = defaultdict(float)
 
-            token_doc_sets = [
-                set(results.keys()) for results in token_results_map.values() if results
-            ]
+            token_doc_sets = []
+            with self.env.begin() as txn:
+                for token in processed_query.get('tokens', []):
+                    token_data = self.get_token_result(token, txn)
+                    if token_data:
+                        token_doc_sets.append(set(token_data.keys()))
+                        for doc_id, scores in token_data.items():
+                            doc_scores_bm25[doc_id] += scores.get('bm25', 0)
+                            doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
+
             matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
-            ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 10000)
-            return ranked_docs
+
+            start = time.time()
+            bm25_scores = self.get_top_n_scores(doc_scores_bm25, matching_docs, 10000)
+            tfidf_scores = self.get_top_n_scores(doc_scores_tfidf, matching_docs, 10000)
+            print(f'TEXT SEARCH | Ranking: {time.time() - start}')
+
+            start = time.time()
+            # Normalisation and merging of scores...
+            max_bm25 = max(bm25_scores.values(), default=1)
+            min_bm25 = min(bm25_scores.values(), default=0)
+            max_tfidf = max(tfidf_scores.values(), default=1)
+            min_tfidf = min(tfidf_scores.values(), default=0)
+
+            bm25_weight, tfidf_weight, proximity_weight = 0.5, 0.3, 0.2
+
+            # Convert the final_docs set to a NumPy array
+            doc_ids = np.array(list(matching_docs))
+
+            # Create arrays of scores with fallback defaults.
+            bm25_arr = np.array([bm25_scores.get(doc_id, min_bm25) for doc_id in doc_ids])
+            tfidf_arr = np.array([tfidf_scores.get(doc_id, min_tfidf) for doc_id in doc_ids])
+            
+            # Vectorized normalization (adding a small constant to avoid division by zero)
+            norm_bm25 = (bm25_arr - min_bm25) / (max_bm25 - min_bm25 + 1e-9)
+            norm_tfidf = (tfidf_arr - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)
+
+            # Compute the weighted sum for each document.
+            weighted_scores = (bm25_weight * norm_bm25 +
+                            tfidf_weight * norm_tfidf)
+
+            # Convert the results back into a dictionary.
+            ranked_docs = dict(zip(doc_ids, weighted_scores))
+            print(f'TEXT SEARCH | Merging Ranks: {time.time() - start}')
+            print("length of ranked_docs in text search: " + str(len(ranked_docs)))
+            return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
 
 
     def compute_idf(self, df, N):
@@ -495,6 +536,7 @@ class QueryProcessor:
         with self.env.begin() as txn:
             # Process individual tokens using the token cache.
             for token in processed_query.get('tokens', []):
+                print(f'TOKENS | {token}')
                 start_d = time.time()
                 token_results = self.get_token_result(token, txn)
                 deserialisation_time += time.time() - start_d
@@ -555,8 +597,8 @@ class QueryProcessor:
             print(f'TEXT SEARCH | Deserialisation: {deserialisation_time}')
 
             start = time.time()
-            bm25_scores = self.get_top_n_scores(doc_scores_bm25, 10000)
-            tfidf_scores = self.get_top_n_scores(doc_scores_tfidf, 10000)
+            bm25_scores = self.get_top_n_scores(doc_scores_bm25, final_docs, 10000)
+            tfidf_scores = self.get_top_n_scores(doc_scores_tfidf, final_docs, 10000)
             print(f'TEXT SEARCH | Ranking: {time.time() - start}')
 
         start = time.time()
@@ -572,7 +614,7 @@ class QueryProcessor:
 
         # Convert the final_docs set to a NumPy array
         doc_ids = np.array(list(final_docs))
-
+    
         # Create arrays of scores with fallback defaults.
         bm25_arr = np.array([bm25_scores.get(doc_id, min_bm25) for doc_id in doc_ids])
         tfidf_arr = np.array([tfidf_scores.get(doc_id, min_tfidf) for doc_id in doc_ids])
@@ -596,29 +638,40 @@ class QueryProcessor:
 
 
 
-    def get_top_n_scores(self, doc_scores, top_n):
-        """Returns the top N document scores sorted in descending order."""
+    def get_top_n_scores(self, doc_scores, doc_set, top_n):
+        """Returns the top N document scores (from the docs in doc_set) sorted in descending order."""
+        if not doc_scores:
+            return {}
 
-        if not doc_scores:  # Handle empty dictionary case
-            return []
+        # Filter doc_scores to only include documents in doc_set.
+        filtered = {doc: score for doc, score in doc_scores.items() if doc in doc_set}
+        if not filtered:
+            return {}
 
-        n = len(doc_scores)
-        # Use np.fromiter to directly create the arrays without creating intermediate lists.
-        keys = np.fromiter(doc_scores.keys(), dtype=object, count=n)
-        values = np.fromiter(doc_scores.values(), dtype=np.float64, count=n)
+        n = len(filtered)
+        # Create NumPy arrays from the filtered dictionary.
+        keys = np.fromiter(filtered.keys(), dtype=object, count=n)
+        values = np.fromiter(filtered.values(), dtype=np.float64, count=n)
         
-        # If top_n >= n, we want *all* scores, so do a full sort:
-        if top_n >= n:
-            sorted_indices = np.argsort(-values)  # Sort descending
-            return dict(zip(keys[sorted_indices], values[sorted_indices]))
+        # Get indices that would sort the scores in descending order.
+        sorted_indices = np.argsort(-values)
+        
+        # Select only the top_n indices (ensure we don't go out of bounds).
+        top_indices = sorted_indices[:min(top_n, n)]
+        
+        # Build the dictionary for the top N documents.
+        top_keys = keys[top_indices]
+        top_values = values[top_indices]
+        return dict(zip(top_keys, top_values))
 
-        # Adjust top_n if it's larger than available scores
-        top_n = min(top_n, len(values))
+    
+        # # Adjust top_n if it's larger than available scores
+        # top_n = min(top_n, len(values))
 
-        top_indices = np.argpartition(-values, top_n)[:top_n]  # Partial sort (O(N))
-        sorted_indices = top_indices[np.argsort(-values[top_indices])]  # Sort only top_n (O(k log k))
+        # top_indices = np.argpartition(-values, top_n)[:top_n]  # Partial sort (O(N))
+        # sorted_indices = top_indices[np.argsort(-values[top_indices])]  # Sort only top_n (O(k log k))
 
-        return dict(zip(keys[sorted_indices], values[sorted_indices]))
+        # return dict(zip(keys[sorted_indices], values[sorted_indices]))
 
     def bm25_tfidf_search(self, doc_set, query_terms, txn, top_n=100):
         """
