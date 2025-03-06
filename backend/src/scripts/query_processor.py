@@ -36,6 +36,7 @@ logging.basicConfig(
     format="{} : %(asctime)s - %(levelname)s : %(message)s".format("Query Processing Module")
 )
 
+
 class QueryProcessor:
     def __init__(self, stop_word_path=None, use_stopwords=True, use_stemming=True):
         """
@@ -59,9 +60,9 @@ class QueryProcessor:
         self.b = 0.75
         self.N = 1029720  # Total number of documents
         self.avg_doc_length = 170  # Approximate average document length (assumed)
-        self.lmdb_path = get_relative_path("data","index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
+        self.lmdb_path = get_relative_path("data", "index_data_dishcovery/inverted_index_2.lmdb/data.mdb")
         self.env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
-        self.syn_path = get_relative_path("api","ingredient_synonyms_mapping.json")
+        self.syn_path = get_relative_path("api", "ingredient_synonyms_mapping.json")
 
         self.PROJECT_ID = "dishcovery-449618"
         self.conn = self.get_connection()
@@ -193,12 +194,12 @@ class QueryProcessor:
 
         # Inititalise processed query dict
         processed_query = {"original_query": query,
-                        # "processed_query": "", NOT REQUIRED
-                        "n_grams": [],  # remove underscore
-                        "synonyms": [],  # TO_DO
-                        "tokens": [],
-                        "exclude_tokens": exclude_tokens
-                        }
+                           # "processed_query": "", NOT REQUIRED
+                           "n_grams": [],  # remove underscore
+                           "synonyms": [],  # TO_DO
+                           "tokens": [],
+                           "exclude_tokens": exclude_tokens
+                           }
 
         processed_query['phrase_queries'] = self.extract_phrases(query)
         # processed_query['boolean_operators'] = self.extract_boolean_operators(query) NOT REQUIRED
@@ -213,20 +214,20 @@ class QueryProcessor:
 
         if len(tokenised_query) == 0:
             return "No tokens found"
-        
+
         # Store the pre-stemmed tokens for synonym expansion
         pre_stemmed_tokens = tokenised_query.copy()
-        
+
         # Expand query with synonyms BEFORE stemming
         synonyms = self.get_synonyms_for_tokens(pre_stemmed_tokens)
         processed_query['synonyms'] = synonyms
-        
+
         # Combine original tokens with synonyms for stemming
         all_tokens = tokenised_query + synonyms
 
         print("Query now:")
         print(synonyms)
-        
+
         # Apply stemming to all tokens (original + synonyms) if enabled
         if self.use_stemming:
             stemmed_tokens = self.text_stemmer(all_tokens)
@@ -236,7 +237,7 @@ class QueryProcessor:
         else:
             processed_query['tokens'] = all_tokens
             processed_query['exclude_tokens'] = exclude_tokens
-        
+
         # Generate n-grams
         self.query_n_gram(processed_query)
 
@@ -246,34 +247,35 @@ class QueryProcessor:
     def get_synonyms_for_tokens(self, tokens):
         """
         Gets synonyms for tokens from ingredient_synonym_mapping.
-        
+
         Args:
             tokens (list): List of tokens to find synonyms for
-            
+
         Returns:
             list: List of synonym tokens (up to 3 per original token)
         """
         try:
             all_synonyms = []
-            
+
             # Load the ingredient synonym mapping from JSON file
             with open(self.syn_path, 'r') as f:
                 ingredient_synonyms = json.load(f)
-            
+
             # For each token in the query, find synonyms
             for token in tokens:
                 if token in ingredient_synonyms:
                     # Get top 3 synonyms (or fewer if less are available)
                     token_synonyms = ingredient_synonyms[token][:3]
                     all_synonyms.extend(token_synonyms)
-            
+
             # Return unique synonyms
             return list(set(all_synonyms))
-        
+
         except Exception as e:
             logging.error(f"Error getting synonyms: {str(e)}")
             # If there's an error, return empty list
             return []
+
     def process_query_ingredients(self, query, exclude_tokens):
 
         logging.info("Processing Query: {}".format(query))
@@ -295,7 +297,6 @@ class QueryProcessor:
         processed_query['exclude_tokens'] = tokenized_exclusions
 
         return processed_query
-
 
     def get_ranked_documents(self, processed_query, isText):
         '''
@@ -321,7 +322,6 @@ class QueryProcessor:
                 exclude_docs.update(token_results.keys())
         print("Excluded documents: {}".format(exclude_docs))
 
-
         matching_docs = set()
         proximity_scores = defaultdict(float)
 
@@ -331,19 +331,59 @@ class QueryProcessor:
             ranked_docs = self.text_search(processed_query, exclude_docs)
             print(f'RANKED DOCS| time to get ranked docs:  {time.time() - start}')
 
-            #self.query_cache.set(query_cache_dict, ranked_docs)
+            # self.query_cache.set(query_cache_dict, ranked_docs)
             return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
         else:
             print("Ingredients-based search")
-            token_results_map = {token: self.search_index(token) for token in processed_query.get('tokens', [])}
+            doc_scores_bm25 = defaultdict(float)
+            doc_scores_tfidf = defaultdict(float)
 
-            token_doc_sets = [
-                set(results.keys()) for results in token_results_map.values() if results
-            ]
+            token_doc_sets = []
+            with self.env.begin() as txn:
+                for token in processed_query.get('tokens', []):
+                    token_data = self.get_token_result(token, txn)
+                    if token_data:
+                        token_doc_sets.append(set(token_data.keys()))
+                        for doc_id, scores in token_data.items():
+                            doc_scores_bm25[doc_id] += scores.get('bm25', 0)
+                            doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
+
             matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
-            ranked_docs = self.tfidf_search(matching_docs, processed_query["tokens"], 10000)
-            return ranked_docs
 
+            start = time.time()
+            bm25_scores = self.get_top_n_scores(doc_scores_bm25, matching_docs, 10000)
+            tfidf_scores = self.get_top_n_scores(doc_scores_tfidf, matching_docs, 10000)
+            print(f'TEXT SEARCH | Ranking: {time.time() - start}')
+
+            start = time.time()
+            # Normalisation and merging of scores...
+            max_bm25 = max(bm25_scores.values(), default=1)
+            min_bm25 = min(bm25_scores.values(), default=0)
+            max_tfidf = max(tfidf_scores.values(), default=1)
+            min_tfidf = min(tfidf_scores.values(), default=0)
+
+            bm25_weight, tfidf_weight, proximity_weight = 0.5, 0.3, 0.2
+
+            # Convert the final_docs set to a NumPy array
+            doc_ids = np.array(list(matching_docs))
+
+            # Create arrays of scores with fallback defaults.
+            bm25_arr = np.array([bm25_scores.get(doc_id, min_bm25) for doc_id in doc_ids])
+            tfidf_arr = np.array([tfidf_scores.get(doc_id, min_tfidf) for doc_id in doc_ids])
+
+            # Vectorized normalization (adding a small constant to avoid division by zero)
+            norm_bm25 = (bm25_arr - min_bm25) / (max_bm25 - min_bm25 + 1e-9)
+            norm_tfidf = (tfidf_arr - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)
+
+            # Compute the weighted sum for each document.
+            weighted_scores = (bm25_weight * norm_bm25 +
+                               tfidf_weight * norm_tfidf)
+
+            # Convert the results back into a dictionary.
+            ranked_docs = dict(zip(doc_ids, weighted_scores))
+            print(f'TEXT SEARCH | Merging Ranks: {time.time() - start}')
+            print("length of ranked_docs in text search: " + str(len(ranked_docs)))
+            return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
 
     def compute_idf(self, df, N):
         """Compute Inverse Document Frequency (IDF)"""
@@ -374,7 +414,6 @@ class QueryProcessor:
 
         return sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
 
-    
     def compute_tfidf(self, tf, df, N):
         if tf == 0 or df == 0:
             return 0
@@ -399,6 +438,7 @@ class QueryProcessor:
         if len(self.token_cache) > self.cache_limit:
             self.token_cache.popitem(last=False)
         return result
+
     """
     # def text_search(self, processed_query, exclude_docs):
     #     matching_docs = set()
@@ -450,7 +490,7 @@ class QueryProcessor:
     #         # bm25_scores = dict(self.bm25_search(final_docs, processed_query["tokens"], 10000))
     #         # tfidf_scores = dict(self.tfidf_search(final_docs, processed_query["tokens"], 10000))
     #         print(f'TEXT SEARCH | Searching:  {time.time() - start}')
-            
+
     #         start = time.time()
     #         # scores = self.bm25_tfidf_search(final_docs, processed_query["tokens"], txn, 10000)
     #         bm25_scores = dict(self.get_top_n_scores(doc_scores_bm25, 10000))
@@ -483,7 +523,8 @@ class QueryProcessor:
     #     # Store in query cache
     #     print("length of ranked_docs in text search: " + str(len(ranked_docs)))
     #     return ranked_docs
-    """  
+    """
+
     def text_search(self, processed_query, exclude_docs):
         matching_docs = set()
         doc_scores_bm25 = defaultdict(float)
@@ -495,6 +536,7 @@ class QueryProcessor:
         with self.env.begin() as txn:
             # Process individual tokens using the token cache.
             for token in processed_query.get('tokens', []):
+                print(f'TOKENS | {token}')
                 start_d = time.time()
                 token_results = self.get_token_result(token, txn)
                 deserialisation_time += time.time() - start_d
@@ -555,8 +597,8 @@ class QueryProcessor:
             print(f'TEXT SEARCH | Deserialisation: {deserialisation_time}')
 
             start = time.time()
-            bm25_scores = self.get_top_n_scores(doc_scores_bm25, 10000)
-            tfidf_scores = self.get_top_n_scores(doc_scores_tfidf, 10000)
+            bm25_scores = self.get_top_n_scores(doc_scores_bm25, final_docs, 10000)
+            tfidf_scores = self.get_top_n_scores(doc_scores_tfidf, final_docs, 10000)
             print(f'TEXT SEARCH | Ranking: {time.time() - start}')
 
         start = time.time()
@@ -581,12 +623,12 @@ class QueryProcessor:
         # Vectorized normalization (adding a small constant to avoid division by zero)
         norm_bm25 = (bm25_arr - min_bm25) / (max_bm25 - min_bm25 + 1e-9)
         norm_tfidf = (tfidf_arr - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)
-        norm_prox  = (prox_arr - min_prox) / (max_prox - min_prox + 1e-9)
+        norm_prox = (prox_arr - min_prox) / (max_prox - min_prox + 1e-9)
 
         # Compute the weighted sum for each document.
         weighted_scores = (bm25_weight * norm_bm25 +
-                        tfidf_weight * norm_tfidf +
-                        proximity_weight * norm_prox)
+                           tfidf_weight * norm_tfidf +
+                           proximity_weight * norm_prox)
 
         # Convert the results back into a dictionary.
         ranked_docs = dict(zip(doc_ids, weighted_scores))
@@ -594,26 +636,39 @@ class QueryProcessor:
         print("length of ranked_docs in text search: " + str(len(ranked_docs)))
         return ranked_docs
 
+    def get_top_n_scores(self, doc_scores, doc_set, top_n):
+        """Returns the top N document scores (from the docs in doc_set) sorted in descending order."""
+        if not doc_scores:
+            return {}
 
+        # Filter doc_scores to only include documents in doc_set.
+        filtered = {doc: score for doc, score in doc_scores.items() if doc in doc_set}
+        if not filtered:
+            return {}
 
-    def get_top_n_scores(self, doc_scores, top_n):
-        """Returns the top N document scores sorted in descending order."""
+        n = len(filtered)
+        # Create NumPy arrays from the filtered dictionary.
+        keys = np.fromiter(filtered.keys(), dtype=object, count=n)
+        values = np.fromiter(filtered.values(), dtype=np.float64, count=n)
 
-        if not doc_scores:  # Handle empty dictionary case
-            return []
+        # Get indices that would sort the scores in descending order.
+        sorted_indices = np.argsort(-values)
 
-        n = len(doc_scores)
-        # Use np.fromiter to directly create the arrays without creating intermediate lists.
-        keys = np.fromiter(doc_scores.keys(), dtype=object, count=n)
-        values = np.fromiter(doc_scores.values(), dtype=np.float64, count=n)
+        # Select only the top_n indices (ensure we don't go out of bounds).
+        top_indices = sorted_indices[:min(top_n, n)]
 
-        # Adjust top_n if it's larger than available scores
-        top_n = min(top_n, len(values))
+        # Build the dictionary for the top N documents.
+        top_keys = keys[top_indices]
+        top_values = values[top_indices]
+        return dict(zip(top_keys, top_values))
 
-        top_indices = np.argpartition(-values, top_n)[:top_n]  # Partial sort (O(N))
-        sorted_indices = top_indices[np.argsort(-values[top_indices])]  # Sort only top_n (O(k log k))
+        # # Adjust top_n if it's larger than available scores
+        # top_n = min(top_n, len(values))
 
-        return dict(zip(keys[sorted_indices], values[sorted_indices]))
+        # top_indices = np.argpartition(-values, top_n)[:top_n]  # Partial sort (O(N))
+        # sorted_indices = top_indices[np.argsort(-values[top_indices])]  # Sort only top_n (O(k log k))
+
+        # return dict(zip(keys[sorted_indices], values[sorted_indices]))
 
     def bm25_tfidf_search(self, doc_set, query_terms, txn, top_n=100):
         """
@@ -623,7 +678,7 @@ class QueryProcessor:
         doc_scores_bm25 = defaultdict(float)
         doc_scores_tfidf = defaultdict(float)
         # You may replace this with a precomputed mapping of doc lengths.
-        doc_lengths = {}  
+        doc_lengths = {}
         doc_set.discard('___')
 
         for term in query_terms:
@@ -646,15 +701,13 @@ class QueryProcessor:
                         doc_scores_bm25[doc_id] += term_data[doc_id]['bm25']
                         doc_scores_tfidf[doc_id] += term_data[doc_id]['tfidf']
                 print(f'BM25 | retrieving:  {time.time() - start}')
-                
+
         start = time.time()
         # Get top N results for BM25 and TF-IDF
         ranked_bm25 = self.get_top_n_scores(doc_scores_bm25, top_n)
         ranked_tfidf = self.get_top_n_scores(doc_scores_tfidf, top_n)
         print(f'BM25 | sorting:  {time.time() - start}')
         return [ranked_bm25, ranked_tfidf]
-                                                           
-
 
     def tokens_in_proximity(self, positions_lists, threshold):
         """
@@ -743,58 +796,55 @@ class QueryProcessor:
     def get_recipe_from_store(self, paged_documents, diet_preference):
         start = time.time()
         document_ids = [doc[0] for doc in paged_documents]
-        query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
+        #query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
 
         conn = self.conn
         cursor = conn.cursor()
 
         # Fetch recipes
-        cursor.execute(query, (document_ids,))
-        mappings = cursor.fetchall()
-        recipe_ids = [doc[1] for doc in mappings]
-        print(f'RETRIEVE DOCS | Getting maps:  {time.time() - start}')
+        #cursor.execute(query, (document_ids,))
+        #mappings = cursor.fetchall()
+        #recipe_ids = [doc[1] for doc in mappings]
+        #print(f'RETRIEVE DOCS | Getting maps:  {time.time() - start}')
 
-        start = time.time()
+        #start = time.time()
         final_recipes = []
-        cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = ANY(%s)", (recipe_ids,))
+        cursor.execute("SELECT * FROM recipes_extended WHERE document_id = ANY(%s)", (document_ids,))
         db_recipes = cursor.fetchall()
 
         for r in db_recipes:
             recipe_dict = {
-                    "id": r[0],
-                    "url": r[2],
-                    "title": r[1],
-                    "ingredients": r[3],
-                    "instructions": r[4]
+                "id": r[0],
+                "url": r[2],
+                "title": r[1],
+                "ingredients": r[3],
+                "instructions": r[4]
             }
             final_recipes.append(recipe_dict)
-        
-        return final_recipes
 
+        return final_recipes
 
     def get_selected_recipe_from_store(self, recipe_id):
         conn = self.conn
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
         recipe_details = cursor.fetchall()
-        if len(recipe_details)!=0:
+        if len(recipe_details) != 0:
             print(f"fetched recipe from store sucessfully : {recipe_id}")
         if len(recipe_details) != 0:
             row = recipe_details[0]
             recipe_dict = {
-            "id": row[0],
-            "url": row[2],
-            "title": row[1],
-            "ingredients": row[3],
-            "instructions": row[4]
+                "id": row[0],
+                "url": row[2],
+                "title": row[1],
+                "ingredients": row[3],
+                "instructions": row[4]
 
             }
             return recipe_dict
         else:
             return "No recipe found"
 
+
 if __name__ == "__main__":
     pass
-
-
-
