@@ -11,6 +11,19 @@ export interface SearchResponse {
   isError: boolean;
 }
 
+function mapDietPreferenceToNumber(dietPreference: string): number {
+  switch (dietPreference) {
+    case 'vegan':
+      return 1;
+    case 'vegetarian':
+      return 2;
+    case 'gluten-free':
+      return 3;
+    default:
+      return 0;
+  }
+}
+
 export async function performSearch(
   searchType: string,
   ingredients: string[],
@@ -21,6 +34,7 @@ export async function performSearch(
 ): Promise<SearchResponse> {
   try {
     let url = '';
+    const numericDietPref = mapDietPreferenceToNumber(dietPreference);
     let requestData: any = {};
 
     if (searchType === 'ingredients') {
@@ -28,14 +42,14 @@ export async function performSearch(
       requestData = {
         ingredients,
         exclude: exclusions,
-        dietPreference,
+        dietPreference: numericDietPref,
       };
     } else {
       url = `${CLOUD_RUN}/searchByText`;
       requestData = {
         text: searchText,
         exclude: exclusions,
-        dietPreference,
+        dietPreference: numericDietPref,
       };
     }
     const response = await axios.post(url, requestData, {
@@ -56,7 +70,7 @@ export async function performSearch(
           ingredients: r.ingredients ?? [],
           diet: r.diet ?? '',
           instructions: r.instructions ?? '',
-          url: r.url ?? ''
+          url: r.url ?? '',
         };
       });
     }

@@ -20,7 +20,8 @@ def search_by_ingredients():
     print(f"data : {data}")
     ingredients = data.get('ingredients', [])
     exclude = data.get('exclude', [])
-    diet_preference = data.get('dietPreference', 'none')
+    diet_preference = data.get('dietPreference', 0)
+    print(f"SEARCHED BY INGREDIENTS : {ingredients} , exluded ingredients are : {exclude} , diet_preference is : {diet_preference}")
 
     # Pagination parameters
     page = int(request.args.get('page', 1))  # Default to page 1
@@ -61,8 +62,9 @@ def search_by_text():
     data = request.json
     text = data.get('text', '')
     exclude = data.get('exclude', [])
-    diet_preference = data.get('dietPreference', 'none')
-
+    diet_preference = data.get('dietPreference', 0)
+    print(f"SEARCHED BY TEXT : {text} , exluded ingredients are : {exclude} , diet_preference is : {diet_preference}")
+    
     # Pagination parameters
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 10))
