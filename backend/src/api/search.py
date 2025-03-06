@@ -5,16 +5,30 @@ import time
 import logging
 import redis
 import json
+import os
 
 logging.basicConfig(level=logging.DEBUG)  # Ensure DEBUG level is set
 logger = logging.getLogger(__name__)
 
 # Initialize Redis client
-redis_client = redis.StrictRedis(host='localhost', port=6379, db=2, decode_responses=True)
+# Get Redis config from environment variables
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 
-# Configure Redis to use up to 1GB memory and an all-keys-LRU eviction policy
-redis_client.config_set('maxmemory', '1gb')
-redis_client.config_set('maxmemory-policy', 'allkeys-lru')
+# Connect to Redis
+redis_client = redis.StrictRedis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=2,
+    decode_responses=True
+)
+
+# Check Redis Connection
+try:
+    redis_client.ping()
+    logger.info("Connected to Redis Successfully")
+except redis.exceptions.ConnectionError as e:
+    logger.warning(f"Redis Connection Failed: {e}")
 
 search_blueprint = Blueprint('search', __name__)
 
