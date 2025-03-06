@@ -36,25 +36,26 @@ def search_by_ingredients():
     processed_query = processor.process_query_ingredients(ingredients, exclude)
 
     if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, False)
-        ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
-        session['ranked_recipes'] = ranked_recipes
+        ranked_documents = processor.get_ranked_documents(processed_query,diet_preference, False)
+        paginated_results = processor.get_recipe_from_store(ranked_documents[:end_idx], diet_preference)
+        session['ranked_documents'] = ranked_documents
         session.modified = True
     else:
-        if "ranked_recipes" in session:
-            ranked_recipes = session.get('ranked_recipes', [])
+        if "ranked_documents" in session:
+            ranked_documents = session.get('ranked_documents', [])
+            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, False)
-            ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
-
-    paginated_results = ranked_recipes[start_idx:end_idx]
+            ranked_documents = processor.get_ranked_documents(processed_query, False)
+            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference, False)
+            session['ranked_documents'] = ranked_documents
+            session.modified = True
 
     return jsonify({
         "results": paginated_results,
         "page": page,
         "per_page": per_page,
-        "total_results": len(ranked_recipes),
-        "total_pages": (len(ranked_recipes) + per_page - 1) // per_page  # Compute total pages
+        "total_results": len(ranked_documents),
+        "total_pages": (len(ranked_documents) + per_page - 1) // per_page  
     }), 200
 
 @search_blueprint.route('/searchByText', methods=['POST'])
@@ -82,38 +83,33 @@ def search_by_text():
     if processed_query == "No tokens found" :
         return jsonify({"error": "Recipe not found"}), 400
 
-
     # If first page request, process search and store results in session
     # If not, retrieve recipes from session
-    # if page == 1:
-    start = time.time()
-    ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, True)
-    print(f'Time to get Ranked Docs:  {time.time() - start}')
-    start = time.time()
-    ranked_recipes = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
-    print(f'Time to retrieve Docs from store:  {time.time() - start}')
-    session['ranked_recipes'] = ranked_recipes
-    session.modified = True
-    # else:
-    #     if "ranked_recipes" in session:
-    #         ranked_recipes = session.get('ranked_recipes', [])
-    #     else:
-    #         ranked_documents = processor.get_ranked_documents(processed_query, False)
-    #         ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
+    if page == 1:
+        start = time.time()
+        ranked_documents = processor.get_ranked_documents(processed_query,diet_preference, True)
+        print(f'Time to get Ranked Docs:  {time.time() - start}')
+        start = time.time()
+        paginated_results = processor.get_recipe_from_store(ranked_documents[:end_idx], diet_preference)
+        session['ranked_documents'] = ranked_documents
+        session.modified = True
+    else:
+        if "ranked_documents" in session:
+            ranked_documents = session.get('ranked_documents', [])
+            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
+        else:
+            ranked_documents = processor.get_ranked_documents(processed_query, diet_preference,True)
+            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
 
-            
-    if len(ranked_recipes) == 0:
+    if len(ranked_documents) == 0:
         return jsonify({"error": "Recipe not found"}), 400
-        
-
-    paginated_results = ranked_recipes[start_idx:end_idx]
 
     return jsonify({
         "results": paginated_results,
         "page": page,
         "per_page": per_page,
-        "total_results": len(ranked_recipes),
-        "total_pages": (len(ranked_recipes) + per_page - 1) // per_page  # Compute total pages
+        "total_results": len(ranked_documents),
+        "total_pages": (len(ranked_documents) + per_page - 1) // per_page  # Compute total pages
     }), 200
 
 

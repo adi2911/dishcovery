@@ -647,7 +647,7 @@ class QueryProcessor:
 
         # Convert the final_docs set to a NumPy array
         doc_ids = np.array(list(final_docs))
-
+    
         # Create arrays of scores with fallback defaults.
         bm25_arr = np.array([bm25_scores.get(doc_id, min_bm25) for doc_id in doc_ids])
         tfidf_arr = np.array([tfidf_scores.get(doc_id, min_tfidf) for doc_id in doc_ids])
@@ -669,6 +669,8 @@ class QueryProcessor:
         print("length of ranked_docs in text search: " + str(len(ranked_docs)))
         return ranked_docs
 
+
+
     def get_top_n_scores(self, doc_scores, doc_set, top_n):
         """Returns the top N document scores (from the docs in doc_set) sorted in descending order."""
         if not doc_scores:
@@ -683,18 +685,19 @@ class QueryProcessor:
         # Create NumPy arrays from the filtered dictionary.
         keys = np.fromiter(filtered.keys(), dtype=object, count=n)
         values = np.fromiter(filtered.values(), dtype=np.float64, count=n)
-
+        
         # Get indices that would sort the scores in descending order.
         sorted_indices = np.argsort(-values)
-
+        
         # Select only the top_n indices (ensure we don't go out of bounds).
         top_indices = sorted_indices[:min(top_n, n)]
-
+        
         # Build the dictionary for the top N documents.
         top_keys = keys[top_indices]
         top_values = values[top_indices]
         return dict(zip(top_keys, top_values))
 
+    
         # # Adjust top_n if it's larger than available scores
         # top_n = min(top_n, len(values))
 
