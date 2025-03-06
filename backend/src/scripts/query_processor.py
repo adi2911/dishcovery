@@ -335,7 +335,7 @@ class QueryProcessor:
             print("Ingredients-based search")
             doc_scores_bm25 = defaultdict(float)
             doc_scores_tfidf = defaultdict(float)
-
+            diet_exclusions = set()
             token_doc_sets = []
             with self.env.begin() as txn:
                 for token in processed_query.get('tokens', []):
@@ -343,10 +343,26 @@ class QueryProcessor:
                     if token_data:
                         token_doc_sets.append(set(token_data.keys()))
                         for doc_id, scores in token_data.items():
+                            dietary_flags = scores.get('dietary_flags', 0)
+                            if dietary_preference:
+                                is_vegan = (dietary_flags & 0b100) >> 2  # Extracts the third bit
+                                is_vegetarian = (dietary_flags & 0b010) >> 1  # Extracts the second bit
+                                is_gluten_free = (dietary_flags & 0b001)  # Extracts the first bit
+                                if dietary_preference == 1 and not is_vegan:
+                                    diet_exclusions.add(doc_id)
+                                    continue
+                                if dietary_preference == 2 and not is_vegetarian:
+                                    diet_exclusions.add(doc_id)
+                                    continue
+                                if dietary_preference == 3 and not is_gluten_free:
+                                    diet_exclusions.add(doc_id)
+                                    continue
+
                             doc_scores_bm25[doc_id] += scores.get('bm25', 0)
                             doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
 
             matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
+            matching_docs = matching_docs - diet_exclusions
 
             start = time.time()
             bm25_scores = self.get_top_n_scores(doc_scores_bm25, matching_docs, 10000)
