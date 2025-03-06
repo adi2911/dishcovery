@@ -328,8 +328,6 @@ class QueryProcessor:
             start = time.time()
             ranked_docs = self.text_search(processed_query, exclude_docs, dietary_preference)
             print(f'RANKED DOCS| time to get ranked docs:  {time.time() - start}')
-
-            # self.query_cache.set(query_cache_dict, ranked_docs)
             return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
         else:
             print("Ingredients-based search")
@@ -831,7 +829,8 @@ class QueryProcessor:
 
     def get_recipe_from_store(self, paged_documents, diet_preference):
         start = time.time()
-        document_ids = [doc[0] for doc in paged_documents]
+        document_ids = [str(doc[0]) for doc in paged_documents]
+        print("function was called")
         #query = "SELECT document_id, recipe_id FROM document_mappings WHERE document_id = ANY(%s)"
 
         conn = self.conn
@@ -843,26 +842,25 @@ class QueryProcessor:
         #recipe_ids = [doc[1] for doc in mappings]
         #print(f'RETRIEVE DOCS | Getting maps:  {time.time() - start}')
 
-        #start = time.time()
         final_recipes = []
-        cursor.execute("SELECT recipe_id, title, url, ingredients, instructions FROM recipes_extended WHERE document_id = ANY(%s)", (document_ids,))
+        cursor.execute("SELECT document_id, recipe_id, title, url, ingredients, instructions FROM recipes_extended WHERE document_id = ANY(%s)", (document_ids,))
         db_recipes = cursor.fetchall()
 
-        for r in db_recipes:
-            recipe_dict = {
-                "id": r[0],
-                "url": r[2],
-                "title": r[1],
-                "ingredients": r[3],
-                "instructions": r[4]
-            }
-            final_recipes.append(recipe_dict)
+        recipe_dict_map = {r[0]: {
+            "id": r[1],
+            "url": r[3],
+            "title": r[2],
+            "ingredients": r[4],
+            "instructions": r[5]
+        } for r in db_recipes}
 
+        final_recipes = [recipe_dict_map[doc_id] for doc_id in document_ids if doc_id in recipe_dict_map]
         return final_recipes
 
     def get_selected_recipe_from_store(self, recipe_id):
         conn = self.conn
         cursor = conn.cursor()
+        print("recipe_id in get_selected_recipe_from_store:", recipe_id)
         cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
         recipe_details = cursor.fetchall()
         if len(recipe_details) != 0:
@@ -877,6 +875,7 @@ class QueryProcessor:
                 "instructions": row[4]
 
             }
+            print("recipe_id from sql:", recipe_dict["id"])
             return recipe_dict
         else:
             return "No recipe found"
