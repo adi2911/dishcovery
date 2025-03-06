@@ -1,11 +1,7 @@
 Flask
 Flask-Cors
-google-cloud-firestore
 PyStemmer
 google-cloud-secret-manager
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
 requests
 redis
 flask_session
