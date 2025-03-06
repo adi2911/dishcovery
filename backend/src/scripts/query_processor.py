@@ -317,10 +317,8 @@ class QueryProcessor:
 
         for token in processed_query.get('exclude_tokens', []):
             token_results = self.search_index(token)
-            print("Token results: {}".format(token_results))
             if token_results:
                 exclude_docs.update(token_results.keys())
-        print("Excluded documents: {}".format(exclude_docs))
 
         matching_docs = set()
         proximity_scores = defaultdict(float)
@@ -545,6 +543,7 @@ class QueryProcessor:
                     matching_docs.update(token_results.keys())
                     for doc_id, scores in token_results.items():
                         dietary_flags = scores.get('dietary_flags', 0)
+
                         if dietary_preference:
                             is_vegan = (dietary_flags & 0b100) >> 2  # Extracts the third bit
                             is_vegetarian = (dietary_flags & 0b010) >> 1  # Extracts the second bit
@@ -552,7 +551,7 @@ class QueryProcessor:
                             if dietary_preference == 1 and not is_vegan:
                                 diet_exclusions.append(doc_id)
                                 continue
-                            if dietary_preference == 2 and not (is_vegetarian or is_vegan):
+                            if dietary_preference == 2 and not is_vegetarian:
                                 diet_exclusions.append(doc_id)
                                 continue
                             if dietary_preference == 3 and not is_gluten_free:
@@ -607,6 +606,7 @@ class QueryProcessor:
                             doc_scores_bm25[doc_id] += scores.get('bm25', 0)
                             doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
                         proximity_scores[doc_id] = 1 / (1 + threshold)
+
 
             exclude_docs.update(diet_exclusions)
             final_docs = matching_docs - exclude_docs
