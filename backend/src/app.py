@@ -9,9 +9,6 @@ from api.search import search_blueprint
 from api.autocomplete import autocomplete_blueprint, init_trie
 from global_path import get_relative_path
 
-import warnings
-
-warnings.filterwarnings("ignore", message="Your application has authenticated using end user credentials from Google Cloud SDK without a quota project.")
 
 logging.basicConfig(level=logging.INFO)
 
