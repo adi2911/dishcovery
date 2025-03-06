@@ -35,7 +35,7 @@ def search_by_ingredients():
     processed_query = processor.process_query_ingredients(ingredients, exclude)
 
     if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, False)
+        ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, False)
         ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
         session['ranked_recipes'] = ranked_recipes
         session.modified = True
@@ -43,7 +43,7 @@ def search_by_ingredients():
         if "ranked_recipes" in session:
             ranked_recipes = session.get('ranked_recipes', [])
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, False)
+            ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, False)
             ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
 
     paginated_results = ranked_recipes[start_idx:end_idx]
@@ -85,7 +85,7 @@ def search_by_text():
     # If not, retrieve recipes from session
     # if page == 1:
     start = time.time()
-    ranked_documents = processor.get_ranked_documents(processed_query, True)
+    ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, True)
     print(f'Time to get Ranked Docs:  {time.time() - start}')
     start = time.time()
     ranked_recipes = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)

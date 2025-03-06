@@ -298,7 +298,7 @@ class QueryProcessor:
 
         return processed_query
 
-    def get_ranked_documents(self, processed_query, isText):
+    def get_ranked_documents(self, processed_query, dietary_preference, isText):
         '''
         Takes the query details as JSON, processes the search and ranks the documents.
         Input: {
@@ -328,7 +328,7 @@ class QueryProcessor:
         if isText:
             print("Text-based search")
             start = time.time()
-            ranked_docs = self.text_search(processed_query, exclude_docs)
+            ranked_docs = self.text_search(processed_query, exclude_docs, dietary_preference)
             print(f'RANKED DOCS| time to get ranked docs:  {time.time() - start}')
 
             # self.query_cache.set(query_cache_dict, ranked_docs)
@@ -525,11 +525,12 @@ class QueryProcessor:
     #     return ranked_docs
     """
 
-    def text_search(self, processed_query, exclude_docs):
+    def text_search(self, processed_query, exclude_docs, dietary_preference):
         matching_docs = set()
         doc_scores_bm25 = defaultdict(float)
         doc_scores_tfidf = defaultdict(float)
         proximity_scores = defaultdict(float)
+        dietary_preference = 1
 
         deserialisation_time = 0
         start = time.time()
@@ -543,6 +544,19 @@ class QueryProcessor:
                 if token_results:
                     matching_docs.update(token_results.keys())
                     for doc_id, scores in token_results.items():
+                        dietary_flags = scores.get('dietary_flags', 0)
+                        print(dietary_flags)
+                        if not dietary_preference:
+                            is_vegan = (dietary_flags & 0b100) >> 2  # Extracts the third bit
+                            is_vegetarian = (dietary_flags & 0b010) >> 1  # Extracts the second bit
+                            is_gluten_free = (dietary_flags & 0b001)  # Extracts the first bit
+                            if dietary_preference == 1 and is_vegan:
+                                continue
+                            if dietary_preference == 2 and (is_vegetarian or is_vegan):
+                                continue
+                            if dietary_preference == 3 and is_gluten_free:
+                                continue
+
                         doc_scores_bm25[doc_id] += scores.get('bm25', 0)
                         doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
 
@@ -809,7 +823,7 @@ class QueryProcessor:
 
         #start = time.time()
         final_recipes = []
-        cursor.execute("SELECT * FROM recipes_extended WHERE document_id = ANY(%s)", (document_ids,))
+        cursor.execute("SELECT recipe_id, title, url, ingredients, instructions FROM recipes_extended WHERE document_id = ANY(%s)", (document_ids,))
         db_recipes = cursor.fetchall()
 
         for r in db_recipes:
