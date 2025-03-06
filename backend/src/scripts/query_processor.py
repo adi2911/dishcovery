@@ -530,7 +530,7 @@ class QueryProcessor:
         doc_scores_bm25 = defaultdict(float)
         doc_scores_tfidf = defaultdict(float)
         proximity_scores = defaultdict(float)
-        dietary_preference = 1
+        diet_exclusions = []
 
         deserialisation_time = 0
         start = time.time()
@@ -545,16 +545,18 @@ class QueryProcessor:
                     matching_docs.update(token_results.keys())
                     for doc_id, scores in token_results.items():
                         dietary_flags = scores.get('dietary_flags', 0)
-                        print(dietary_flags)
-                        if not dietary_preference:
+                        if dietary_preference:
                             is_vegan = (dietary_flags & 0b100) >> 2  # Extracts the third bit
                             is_vegetarian = (dietary_flags & 0b010) >> 1  # Extracts the second bit
                             is_gluten_free = (dietary_flags & 0b001)  # Extracts the first bit
-                            if dietary_preference == 1 and is_vegan:
+                            if dietary_preference == 1 and not is_vegan:
+                                diet_exclusions.append(doc_id)
                                 continue
-                            if dietary_preference == 2 and (is_vegetarian or is_vegan):
+                            if dietary_preference == 2 and not (is_vegetarian or is_vegan):
+                                diet_exclusions.append(doc_id)
                                 continue
-                            if dietary_preference == 3 and is_gluten_free:
+                            if dietary_preference == 3 and not is_gluten_free:
+                                diet_exclusions.append(doc_id)
                                 continue
 
                         doc_scores_bm25[doc_id] += scores.get('bm25', 0)
@@ -606,6 +608,7 @@ class QueryProcessor:
                             doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
                         proximity_scores[doc_id] = 1 / (1 + threshold)
 
+            exclude_docs.update(diet_exclusions)
             final_docs = matching_docs - exclude_docs
             print(f'TEXT SEARCH | Searching: {time.time() - start}')
             print(f'TEXT SEARCH | Deserialisation: {deserialisation_time}')
