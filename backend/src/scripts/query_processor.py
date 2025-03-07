@@ -296,6 +296,43 @@ class QueryProcessor:
 
         return processed_query
 
+    def phrase_search(self, phrase, txn):
+        """
+        Searches for documents where the words in the phrase appear close to each other.
+
+        Args:
+            phrase (str): The phrase to search for.
+            txn: The LMDB transaction object.
+
+        Returns:
+            set: A set of document IDs where the phrase appears.
+        """
+        words = phrase.split()
+        if len(words) < 2:
+            return set(), words
+
+        token_results_map = {}
+        for word in words:
+            result = self.get_token_result(word, txn)
+            if not result:
+                return set(), words
+            token_results_map[word] = result
+
+        docs_for_phrase = set.intersection(*(set(res.keys()) for res in token_results_map.values()))
+
+        valid_docs = set()
+        for doc_id in docs_for_phrase:
+            positions_lists = []
+            for word in words:
+                token_doc = token_results_map[word].get(doc_id)
+                if not token_doc:
+                    break
+                pos_list = sorted(pos for positions in token_doc.values() for pos in positions)
+                positions_lists.append(pos_list)
+            if len(positions_lists) == len(words) and self.tokens_in_proximity(positions_lists, len(words) + 2):
+                valid_docs.add(doc_id)
+
+        return valid_docs, words
 
     def get_ranked_documents(self, processed_query, isText):
         '''
@@ -321,8 +358,8 @@ class QueryProcessor:
                 exclude_docs.update(token_results.keys())
         print("Excluded documents: {}".format(exclude_docs))
 
-
         matching_docs = set()
+        combined_words = set()
         proximity_scores = defaultdict(float)
 
         if isText:
@@ -335,20 +372,50 @@ class QueryProcessor:
             return sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True)[:1000]
         else:
             print("Ingredients-based search")
+
+            # call phrase search function on all the ingredients
+            with self.env.begin() as txn:
+                for token in processed_query.get('tokens', []):
+                    valid_docs, words = self.phrase_search(token, txn)
+                    print("valid docs: " + str(valid_docs))
+                    print("words: " + str(words))
+                    if not matching_docs:
+                        matching_docs = valid_docs
+                    else:
+                        matching_docs &= valid_docs
+                    combined_words.update(words)
+
+            print("matching docs: " + str(matching_docs))
+            print("combined words: " + str(combined_words))
+
             doc_scores_bm25 = defaultdict(float)
             doc_scores_tfidf = defaultdict(float)
 
-            token_doc_sets = []
-            with self.env.begin() as txn:
-                for token in processed_query.get('tokens', []):
-                    token_data = self.get_token_result(token, txn)
-                    if token_data:
-                        token_doc_sets.append(set(token_data.keys()))
-                        for doc_id, scores in token_data.items():
-                            doc_scores_bm25[doc_id] += scores.get('bm25', 0)
-                            doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
+            # When the ingredients are single word query or no match found for multi words query, calculate rankk scores
+            # on all the matching docs containing all the query words
+            if not matching_docs:
+                token_doc_sets = []
+                with self.env.begin() as txn:
+                    for word in combined_words:
+                        token_data = self.get_token_result(word, txn)
+                        if token_data:
+                            token_doc_sets.append(set(token_data.keys()))
+                            for doc_id, scores in token_data.items():
+                                doc_scores_bm25[doc_id] += scores.get('bm25', 0)
+                                doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
+                matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
 
-            matching_docs = set.intersection(*token_doc_sets) if token_doc_sets else set()
+            with self.env.begin() as txn:
+                for word in combined_words:
+                    token_data = self.get_token_result(word, txn)
+                    if token_data:
+                        for doc_id, scores in token_data.items():
+                            if doc_id in matching_docs:
+                                doc_scores_bm25[doc_id] += scores.get('bm25', 0)
+                                doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
+                            else:
+                                doc_scores_bm25[doc_id] += scores.get('bm25', 0)
+                                doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
 
             start = time.time()
             bm25_scores = self.get_top_n_scores(doc_scores_bm25, matching_docs, 10000)
