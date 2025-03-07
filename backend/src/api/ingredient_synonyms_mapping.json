@@ -7411,9 +7411,12 @@
         "leptir"
     ],
     "chicken": [
+        "chicken",
+        "chicken",
+        "broiler",
         "bird",
-        "chicke",
         "hen"
+        
     ],
     "shad": [
         "fish",
@@ -10938,7 +10941,8 @@
     "spicy": [
         "hot",
         "spicey",
-        "spicy"
+        "spicy",
+        "chilli"
     ],
     "lan": [
         "eithernet",
@@ -12917,8 +12921,10 @@
     ],
     "pasta": [
         "fettuccine",
-        "fettucine",
-        "pasta"
+        "macaroni",
+        "pasta",
+        "tagliatelle",
+        "fusili"
     ],
     "real": [
         "coin",
@@ -13937,7 +13943,7 @@
     ],
     "chilli": [
         "chilli",
-        "chillie",
+        "spicy",
         "chillies"
     ],
     "sides": [
