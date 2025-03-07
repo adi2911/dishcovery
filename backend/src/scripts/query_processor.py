@@ -829,7 +829,7 @@ class QueryProcessor:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT document_id, recipe_id, title, url, ingredients, instructions "
-                "FROM recipes_extended WHERE document_id = ANY(%s)", (document_ids,)
+                "FROM recipe_extended WHERE document_id = ANY(%s)", (document_ids,)
             )
             db_recipes = cursor.fetchall()
         finally:
@@ -848,7 +848,7 @@ class QueryProcessor:
         conn = self.db_pool.get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM recipe_details WHERE recipe_id = %s", (recipe_id,))
+            cursor.execute("SELECT recipe_id, title, url, ingredients, instructions FROM recipe_extended WHERE recipe_id = %s", (recipe_id,))
             recipe_details = cursor.fetchall()
         finally:
             self.db_pool.release_connection(conn)
