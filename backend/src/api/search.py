@@ -6,9 +6,32 @@ import time
 
 import logging
 import time
+import cProfile
+import redis
+import json
+import os
 
 logging.basicConfig(level=logging.DEBUG)  # Ensure DEBUG level is set
 logger = logging.getLogger(__name__)
+processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
+
+# Initialize Redis client
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+
+# Connect to Redis
+redis_client = redis.StrictRedis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=2,
+    decode_responses=True
+)
+
+try:
+    redis_client.ping()
+    logger.info("Connected to Redis Successfully")
+except redis.exceptions.ConnectionError as e:
+    logger.warning(f"Redis Connection Failed: {e}")
 
 search_blueprint = Blueprint('search', __name__)
 
@@ -28,32 +51,48 @@ def search_by_ingredients():
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
 
-
-    processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
     # Get the QueryProcessor instance from app config
     processor = app.config['query_processor']
     processed_query = processor.process_query_ingredients(ingredients, exclude)
-
+    
+    cache_key = f"ingredients:{json.dumps(ingredients)}:exclude:{json.dumps(exclude)}:diet:{diet_preference}"
     if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, False)
-        ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
-        session['ranked_recipes'] = ranked_recipes
+        cached_docs = redis_client.get(cache_key)
+        if cached_docs:
+            logger.info(f"CACHE HIT for Ingredients Search ({cache_key})")
+            ranked_documents = json.loads(cached_docs)
+        else: 
+            logger.info("CACHE MISS - Running QueryProcessor for Ingredients Search!")
+            ranked_documents = processor.get_ranked_documents(processed_query, False)
+            redis_client.set(cache_key, json.dumps(ranked_documents))
+        
+        paginated_results = processor.get_recipe_from_store(ranked_documents[:end_idx], diet_preference)
+        session['ranked_documents'] = ranked_documents
         session.modified = True
     else:
-        if "ranked_recipes" in session:
-            ranked_recipes = session.get('ranked_recipes', [])
+        if "ranked_documents" in session:
+            ranked_documents = session.get('ranked_documents', [])
+            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, False)
-            ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
-
-    paginated_results = ranked_recipes[start_idx:end_idx]
+            cached_docs = redis_client.get(cache_key)
+            if cached_docs:
+                logger.info(f"CACHE HIT for Ingredients Search (page>1) ({cache_key})")
+                ranked_documents = json.loads(cached_docs)
+            else:
+                logger.info("CACHE MISS (page>1) - Running QueryProcessor for Ingredients Search!")
+                ranked_documents = processor.get_ranked_documents(processed_query, use_text_model=False)
+                redis_client.set(cache_key, json.dumps(ranked_documents))
+                
+            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
+            session['ranked_documents'] = ranked_documents
+            session.modified = True
 
     return jsonify({
         "results": paginated_results,
         "page": page,
         "per_page": per_page,
-        "total_results": len(ranked_recipes),
-        "total_pages": (len(ranked_recipes) + per_page - 1) // per_page  # Compute total pages
+        "total_results": len(ranked_documents),
+        "total_pages": (len(ranked_documents) + per_page - 1) // per_page  
     }), 200
 
 @search_blueprint.route('/searchByText', methods=['POST'])
@@ -71,43 +110,60 @@ def search_by_text():
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
 
-
-    processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
+    start = time.time()
     # Get the QueryProcessor instance from app config
     processor = app.config['query_processor']
     processed_query = processor.process_query_text(text, exclude_tokens=exclude)
+    print(f'Time to process query:  {time.time() - start}')
 
     if processed_query == "No tokens found" :
         return jsonify({"error": "Recipe not found"}), 400
 
-
     # If first page request, process search and store results in session
     # If not, retrieve recipes from session
+    cache_key = f"text:{text}:exclude:{json.dumps(exclude)}:diet:{diet_preference}"
+    
     if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query, True)
-        ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
-        session['ranked_recipes'] = ranked_recipes
+        start = time.time()
+        cached_docs = redis_client.get(cache_key)
+        if cached_docs:
+            logger.info(f"CACHE HIT for Text Search ({cache_key})")
+            ranked_documents = json.loads(cached_docs)
+        else:
+            logger.info("CACHE MISS - Running QueryProcessor for Text Search!")
+            ranked_documents = processor.get_ranked_documents(processed_query, True)
+            redis_client.set(cache_key, json.dumps(ranked_documents))
+            print(f'Time to get Ranked Docs:  {time.time() - start}')
+            start = time.time()
+            
+        paginated_results = processor.get_recipe_from_store(ranked_documents[:end_idx], diet_preference)
+        session['ranked_documents'] = ranked_documents
         session.modified = True
     else:
-        if "ranked_recipes" in session:
-            ranked_recipes = session.get('ranked_recipes', [])
+        if "ranked_documents" in session:
+            ranked_documents = session.get('ranked_documents', [])
+            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, False)
-            ranked_recipes = processor.get_recipe_from_store(ranked_documents, diet_preference)
+            # Fallback: Check Redis if session is empty
+            cached_docs = redis_client.get(cache_key)
+            if cached_docs:
+                logger.info(f"CACHE HIT for Text Search (page>1) ({cache_key})")
+                ranked_documents = json.loads(cached_docs)
+            else:
+                logger.info("CACHE MISS (page>1) - Running QueryProcessor for Text Search!")
+                ranked_documents = processor.get_ranked_documents(processed_query, use_text_model=False)
+                redis_client.set(cache_key, json.dumps(ranked_documents))
+                paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
 
-            
-    if len(ranked_recipes) == 0:
+    if len(ranked_documents) == 0:
         return jsonify({"error": "Recipe not found"}), 400
-        
-
-    paginated_results = ranked_recipes[start_idx:end_idx]
 
     return jsonify({
         "results": paginated_results,
         "page": page,
         "per_page": per_page,
-        "total_results": len(ranked_recipes),
-        "total_pages": (len(ranked_recipes) + per_page - 1) // per_page  # Compute total pages
+        "total_results": len(ranked_documents),
+        "total_pages": (len(ranked_documents) + per_page - 1) // per_page  # Compute total pages
     }), 200
 
 
