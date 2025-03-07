@@ -268,7 +268,7 @@ class QueryProcessor:
             for token in tokens:
                 if token in ingredient_synonyms:
                     # Get top 3 synonyms (or fewer if less are available)
-                    token_synonyms = ingredient_synonyms[token][:3]
+                    token_synonyms = ingredient_synonyms[token][:5]
                     all_synonyms.extend(token_synonyms)
 
             # Return unique synonyms
