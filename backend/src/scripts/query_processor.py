@@ -173,7 +173,7 @@ class QueryProcessor:
         processed_query['n_grams'].extend(trigrams)
 
         logging.info("n-grams generation completed in {}".format(datetime.datetime.now() - start_time))
-        # return processed_query['tokens']
+        # return processed_query
 
     def query_expansion_PRF(self, query):
         pass
@@ -230,16 +230,19 @@ class QueryProcessor:
 
         # Apply stemming to all tokens (original + synonyms) if enabled
         if self.use_stemming:
-            stemmed_tokens = self.text_stemmer(all_tokens)
+            stemmed_tokens = self.text_stemmer(tokenised_query)
+            processed_query['synonyms'] = self.text_stemmer(synonyms)
             tokenized_exclusions = self.text_stemmer(exclude_tokens)
             processed_query['tokens'] = stemmed_tokens
             processed_query['exclude_tokens'] = tokenized_exclusions
         else:
-            processed_query['tokens'] = all_tokens
+            processed_query['tokens'] = tokenised_query
             processed_query['exclude_tokens'] = exclude_tokens
 
         # Generate n-grams
         self.query_n_gram(processed_query)
+
+        processed_query['tokens']=processed_query['tokens']+processed_query['synonyms']
 
         logging.info("Query processing completed in {}".format(datetime.datetime.now() - start_time))
         return processed_query
@@ -314,11 +317,12 @@ class QueryProcessor:
         # 1 - Get exclude tokens' document IDs
         exclude_docs = set()
         print(processed_query)
-
-        for token in processed_query.get('exclude_tokens', []):
-            token_results = self.search_index(token)
-            if token_results:
-                exclude_docs.update(token_results.keys())
+        
+        with self.env.begin() as txn:
+            for token in processed_query.get('exclude_tokens', []):
+                token_results = self.search_index(token,txn)
+                if token_results:
+                    exclude_docs.update(token_results.keys())
 
         matching_docs = set()
         proximity_scores = defaultdict(float)
