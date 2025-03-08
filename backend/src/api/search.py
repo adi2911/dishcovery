@@ -203,7 +203,7 @@ def search_by_text():
                 print(f'Time to process query:  {time.time() - start}')
                 if processed_query == "No tokens found" :
                     return jsonify({"error": "Recipe not found"}), 400
-                ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, False)
+                ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, True)
                 #redis_client.set(cache_key, json.dumps(ranked_documents))
                 try:
                     serialized_data = json.dumps(ranked_documents)
