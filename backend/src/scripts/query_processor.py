@@ -132,7 +132,7 @@ class QueryProcessor:
 
         self.PROJECT_ID = "dishcovery-449618"
         # self.conn = self.get_connection()
-        self.db_pool = ConnectionPool(self.create_new_connection, maxsize=5, keep_alive_interval=30)
+        self.db_pool = ConnectionPool(self.create_new_connection, maxsize=5, keep_alive_interval=100)
 
     def _load_stopwords(self):
         """
