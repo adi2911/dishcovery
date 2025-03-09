@@ -7,12 +7,48 @@ import time
 import logging
 import time
 import cProfile
+import redis
+import json
+import os
+import numpy as np
 
 logging.basicConfig(level=logging.DEBUG)  # Ensure DEBUG level is set
 logger = logging.getLogger(__name__)
 processor = QueryProcessor(stop_word_path=get_relative_path("data","stop_words_english.txt"), use_stemming=True)
 
+# Initialize Redis client
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+
+# Connect to Redis
+redis_client = redis.StrictRedis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=2,
+    decode_responses=True
+)
+try:
+    redis_client.ping()
+    logger.info("Connected to Redis Successfully")
+except redis.exceptions.ConnectionError as e:
+    logger.warning(f"Redis Connection Failed: {e}")
+
 search_blueprint = Blueprint('search', __name__)
+
+# Convert NumPy types to standard Python types
+def convert_to_python_types(obj):
+    if isinstance(obj, list):
+        return [convert_to_python_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_to_python_types(item) for item in obj)
+    elif isinstance(obj, dict):
+        return {key: convert_to_python_types(value) for key, value in obj.items()}
+    elif isinstance(obj, (np.int64, np.int32)):
+        return int(obj)  # Convert NumPy int to Python int
+    elif isinstance(obj, (np.float64, np.float32)):
+        return float(obj)  # Convert NumPy float to Python float
+    else:
+        return obj  # Return as-is if already a native type
 
 @search_blueprint.route('/searchByIngredients', methods=['POST'])
 def search_by_ingredients():
@@ -33,10 +69,28 @@ def search_by_ingredients():
 
     # Get the QueryProcessor instance from app config
     processor = app.config['query_processor']
-    processed_query = processor.process_query_ingredients(ingredients, exclude)
-
+    
+    cache_key = f"ingredients:{json.dumps(ingredients)}:exclude:{json.dumps(exclude)}:diet:{diet_preference}".replace(" ", "_")
     if page == 1:
-        ranked_documents = processor.get_ranked_documents(processed_query,diet_preference, False)
+        cached_docs = redis_client.get(cache_key)
+        if cached_docs:
+            try:
+                logger.info("CACHE HIT for Ingredients Search!")
+                ranked_documents = json.loads(cached_docs)
+            except json.JSONDecodeError as e:
+                logger.error(f"Corrupted Cache Data: {e} - Resetting cache for {cache_key}")
+                redis_client.delete(cache_key)
+                ranked_documents = []
+        else: 
+            logger.info("CACHE MISS - Running QueryProcessor for Ingredients Search!")
+            processed_query = processor.process_query_ingredients(ingredients, exclude)
+            ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, False)
+            try:
+                serialized_data = json.dumps(convert_to_python_types(ranked_documents))
+                redis_client.set(cache_key, serialized_data)
+            except Exception as e:
+                logger.error(f"Redis Serialization Error: {e}")
+        
         paginated_results = processor.get_recipe_from_store(ranked_documents[:end_idx], diet_preference)
         session['ranked_documents'] = ranked_documents
         session.modified = True
@@ -45,8 +99,26 @@ def search_by_ingredients():
             ranked_documents = session.get('ranked_documents', [])
             paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, False)
-            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference, False)
+            cached_docs = redis_client.get(cache_key)
+            if cached_docs:
+                try:
+                    logger.info(f"CACHE HIT for Ingredients Search (page>1) ({cache_key})")
+                    ranked_documents = json.loads(cached_docs)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Corrupted Cache Data: {e} - Resetting cache for {cache_key}")
+                    redis_client.delete(cache_key)
+                    ranked_documents = []
+            else:
+                logger.info("CACHE MISS (page>1) - Running QueryProcessor for Ingredients Search!")
+                processed_query = processor.process_query_ingredients(ingredients, exclude)
+                ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, False)
+                try:
+                    serialized_data = json.dumps(convert_to_python_types(ranked_documents))
+                    redis_client.set(cache_key, serialized_data)
+                except Exception as e:
+                    logger.error(f"Redis Serialization Error: {e}")
+                
+            paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
             session['ranked_documents'] = ranked_documents
             session.modified = True
 
@@ -73,23 +145,39 @@ def search_by_text():
     # Paginate the results
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
-
-    start = time.time()
-    # Get the QueryProcessor instance from app config
     processor = app.config['query_processor']
-    processed_query = processor.process_query_text(text, exclude_tokens=exclude)
-    print(f'Time to process query:  {time.time() - start}')
-
-    if processed_query == "No tokens found" :
-        return jsonify({"error": "Recipe not found"}), 400
 
     # If first page request, process search and store results in session
     # If not, retrieve recipes from session
+    cache_key = f"text:{text}:exclude:{json.dumps(exclude)}:diet:{diet_preference}".replace(" ", "_")
     if page == 1:
         start = time.time()
-        ranked_documents = processor.get_ranked_documents(processed_query,diet_preference, True)
-        print(f'Time to get Ranked Docs:  {time.time() - start}')
-        start = time.time()
+        cached_docs = redis_client.get(cache_key)
+        if cached_docs:
+            try:
+                logger.info(f"CACHE HIT for Text Search ({cache_key})")
+                ranked_documents = json.loads(cached_docs)
+            except json.JSONDecodeError as e:
+                logger.error(f"Corrupted Cache Data: {e} - Resetting cache for {cache_key}")
+                redis_client.delete(cache_key)
+                ranked_documents = []
+        else:
+            logger.info("CACHE MISS - Running QueryProcessor for Text Search!")
+            start = time.time()
+            processed_query = processor.process_query_text(text, exclude_tokens=exclude)
+            print(f'Time to process query:  {time.time() - start}')
+            if processed_query == "No tokens found" :
+                return jsonify({"error": "Recipe not found"}), 400
+            ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, True)
+            try:
+                serialized_data = json.dumps(convert_to_python_types(ranked_documents))
+                redis_client.set(cache_key, serialized_data)
+            except Exception as e:
+                logger.error(f"Redis Serialization Error: {e}")
+
+            print(f'Time to get Ranked Docs:  {time.time() - start}')
+            start = time.time()
+            
         paginated_results = processor.get_recipe_from_store(ranked_documents[:end_idx], diet_preference)
         session['ranked_documents'] = ranked_documents
         session.modified = True
@@ -98,7 +186,30 @@ def search_by_text():
             ranked_documents = session.get('ranked_documents', [])
             paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
         else:
-            ranked_documents = processor.get_ranked_documents(processed_query, diet_preference,True)
+            # Fallback: Check Redis if session is empty
+            cached_docs = redis_client.get(cache_key)
+            if cached_docs:
+                try:
+                    logger.info(f"CACHE HIT for Text Search (page>1) ({cache_key})")
+                    ranked_documents = json.loads(cached_docs)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Corrupted Cache Data: {e} - Resetting cache for {cache_key}")
+                    redis_client.delete(cache_key)
+                    ranked_documents = []
+            else:
+                logger.info("CACHE MISS (page>1) - Getting Ranked Docs for Text Search!")
+                # Get the QueryProcessor instance from app config
+                processed_query = processor.process_query_text(text, exclude_tokens=exclude)
+                print(f'Time to process query:  {time.time() - start}')
+                if processed_query == "No tokens found" :
+                    return jsonify({"error": "Recipe not found"}), 400
+                ranked_documents = processor.get_ranked_documents(processed_query, diet_preference, True)
+                try:
+                    serialized_data = json.dumps(convert_to_python_types(ranked_documents))
+                    redis_client.set(cache_key, serialized_data)
+                except Exception as e:
+                    logger.error(f"Redis Serialization Error: {e}")
+                    
             paginated_results = processor.get_recipe_from_store(ranked_documents[start_idx:end_idx], diet_preference)
 
     if len(ranked_documents) == 0:
