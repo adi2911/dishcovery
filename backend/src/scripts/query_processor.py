@@ -12,7 +12,6 @@ from collections import defaultdict
 import os
 import google.cloud.secretmanager as secretmanager
 from google.cloud.sql.connector import Connector
-from cache_utils import QueryCache, DocCache
 import numpy as np
 from collections import defaultdict
 import cProfile
@@ -28,50 +27,34 @@ logging.basicConfig(
     format="{} : %(asctime)s - %(levelname)s : %(message)s".format("Query Processing Module")
 )
 
-import queue
-import threading
 
 
 import queue
 import threading
-import time
-import pg8000
-from google.cloud.sql.connector import Connector
 
 class ConnectionPool:
-    def __init__(self, connection_factory, maxsize=5, keep_alive_interval=30):
+    def __init__(self, connection_factory, maxsize=5):
         self.connection_factory = connection_factory
         self.pool = queue.Queue(maxsize)
         self.maxsize = maxsize
         self.lock = threading.Lock()
-        self.keep_alive_interval = keep_alive_interval
-        self.running = True
-
-        # Initialize the pool with valid connections
         self._initialize_pool()
 
-        # Start background thread to keep connections alive
-        self.maintenance_thread = threading.Thread(target=self._keep_connections_alive, daemon=True)
-        self.maintenance_thread.start()
-
     def _initialize_pool(self):
-        """Fill the pool with initial connections."""
         for _ in range(self.maxsize):
             self.pool.put(self.connection_factory())
 
     def get_connection(self):
-        """Retrieve a valid connection from the pool."""
         conn = self.pool.get()
+        # Validate the connection using a simple query.
         if not self._is_valid(conn):
-            conn = self.connection_factory()  # Replace with a fresh connection
+            conn = self.connection_factory()
         return conn
 
     def release_connection(self, conn):
-        """Return the connection back to the pool."""
         self.pool.put(conn)
 
     def _is_valid(self, conn):
-        """Check if a connection is still alive."""
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT 1")
@@ -80,28 +63,6 @@ class ConnectionPool:
         except Exception:
             return False
 
-    def _keep_connections_alive(self):
-        """Background thread to keep all connections alive."""
-        while self.running:
-            time.sleep(self.keep_alive_interval)
-            with self.lock:
-                # Refresh connections in the pool
-                refreshed_connections = queue.Queue(self.maxsize)
-                while not self.pool.empty():
-                    conn = self.pool.get()
-                    if self._is_valid(conn):
-                        refreshed_connections.put(conn)
-                    else:
-                        refreshed_connections.put(self.connection_factory())  # Replace stale connection
-                self.pool = refreshed_connections
-
-    def close_all(self):
-        """Close all connections when shutting down."""
-        self.running = False
-        with self.lock:
-            while not self.pool.empty():
-                conn = self.pool.get()
-                conn.close()
 
 class QueryProcessor:
     def __init__(self, stop_word_path=None, use_stopwords=True, use_stemming=True):
@@ -130,9 +91,11 @@ class QueryProcessor:
         self.env = lmdb.open(self.lmdb_path, readonly=True, subdir=False, lock=False)
         self.syn_path = get_relative_path("api", "ingredient_synonyms_mapping.json")
 
+
         self.PROJECT_ID = "dishcovery-449618"
         # self.conn = self.get_connection()
-        self.db_pool = ConnectionPool(self.create_new_connection, maxsize=5, keep_alive_interval=30)
+        self.db_pool = ConnectionPool(self.create_new_connection, maxsize=5)
+
 
     def _load_stopwords(self):
         """
@@ -302,7 +265,7 @@ class QueryProcessor:
             processed_query['tokens'] = stemmed_tokens
         else:
             processed_query['tokens'] = tokenised_query
-
+        
         excl_tokens = set()
         for ex in exclude_tokens:
             phrase, tokens = self.preprocess_ingredient_query(ex)
@@ -312,7 +275,7 @@ class QueryProcessor:
         # Generate n-grams
         self.query_n_gram(processed_query)
 
-        processed_query['tokens'] = list(set(processed_query['tokens'] + processed_query['synonyms']))
+        processed_query['tokens']=list(set(processed_query['tokens'] + processed_query['synonyms']))
 
         logging.info("Query processing completed in {}".format(datetime.datetime.now() - start_time))
         return processed_query
@@ -348,7 +311,7 @@ class QueryProcessor:
             logging.error(f"Error getting synonyms: {str(e)}")
             # If there's an error, return empty list
             return []
-
+    
     def preprocess_ingredient_query(self, ingredient):
 
         cleaned = ingredient.lower()
@@ -362,6 +325,7 @@ class QueryProcessor:
             tokens = self.text_stemmer(tokens)
         phrase = " ".join(tokens)
         return phrase, tokens
+
 
     def process_query_ingredients(self, query, exclude_tokens):
         logging.info("Processing Ingredients Query: {}".format(query))
@@ -402,10 +366,10 @@ class QueryProcessor:
         # 1 - Get exclude tokens' document IDs
         exclude_docs = set()
         print(processed_query)
-
+        
         with self.env.begin() as txn:
             for token in processed_query.get('exclude_tokens', []):
-                token_results = self.search_index(token, txn)
+                token_results = self.search_index(token,txn)
                 if token_results:
                     exclude_docs.update(token_results.keys())
 
@@ -417,13 +381,19 @@ class QueryProcessor:
             start = time.time()
             ranked_docs = self.text_search(processed_query, exclude_docs, dietary_preference)
             print(f'RANKED DOCS| time to get ranked docs:  {time.time() - start}')
-            return heapq.nlargest(1000, ranked_docs.items(), key=lambda x: x[1])
+            if len(ranked_docs) > 0:
+                return heapq.nlargest(1000, ranked_docs.items(), key=lambda x: x[1])
+            else:
+                return []
         else:
             print("Ingredients-based search")
             start = time.time()
             ranked_docs = self.ingredient_search(processed_query, exclude_docs, dietary_preference)
             print(f'RANKED DOCS| time to get ranked docs:  {time.time() - start}')
-            return heapq.nlargest(1000, ranked_docs.items(), key=lambda x: x[1])
+            if len(ranked_docs) > 0:
+                return heapq.nlargest(1000, ranked_docs.items(), key=lambda x: x[1])
+            else:
+                return []
 
     def compute_idf(self, df, N):
         """Compute Inverse Document Frequency (IDF)"""
@@ -483,7 +453,7 @@ class QueryProcessor:
         matching_docs = set()
         doc_scores_bm25 = defaultdict(float)
         doc_scores_tfidf = defaultdict(float)
-
+        
         exclude_docs = set()
         phrase_docs = set()
         token_docs = set()
@@ -496,7 +466,7 @@ class QueryProcessor:
                 if token_results:
                     exclude_docs.update(token_results.keys())
 
-            # Processing Phrases
+        # Processing Phrases
             for phrase in processed_query.get("ingredient_phrases", []):
                 token_data = self.get_token_result(phrase, txn)
                 if token_data:
@@ -515,7 +485,7 @@ class QueryProcessor:
                                 continue
                         doc_scores_bm25[doc_id] += scores.get('bm25', 0) * PHRASE_WEIGHT
                         doc_scores_tfidf[doc_id] += scores.get('tfidf', 0) * PHRASE_WEIGHT
-
+            
             # Process individual ingredient_tokens.
             ingredient_tokens = processed_query.get("ingredient_tokens", [])
             for token in ingredient_tokens:
@@ -524,23 +494,23 @@ class QueryProcessor:
                     continue
 
                 token_docs.update(token_results.keys())
-
+                
                 if dietary_preference:
                     for doc_id, scores in token_results.items():
                         # Cache repeated lookups in local variables.
                         dietary_flags = scores.get('dietary_flags', 0)
                         bm25_val = scores.get('bm25', 0)
                         tfidf_val = scores.get('tfidf', 0)
-
+                        
                         # Extract the dietary bits once.
                         is_vegan = (dietary_flags >> 2) & 1
                         is_vegetarian = (dietary_flags >> 1) & 1
                         is_gluten_free = dietary_flags & 1
-
+                        
                         # Consolidate dietary checks in a single condition.
                         if ((dietary_preference == 1 and not is_vegan) or
-                                (dietary_preference == 2 and not is_vegetarian) or
-                                (dietary_preference == 3 and not is_gluten_free)):
+                            (dietary_preference == 2 and not is_vegetarian) or
+                            (dietary_preference == 3 and not is_gluten_free)):
                             diet_exclusions.add(doc_id)
                             continue
 
@@ -557,28 +527,31 @@ class QueryProcessor:
         # Convert the final_docs set to a NumPy array
         doc_ids = np.array(list(matching_docs))
 
-        # Create arrays of scores with fallback defaults.
-        bm25_list, tfidf_list = [], []
-        for doc_id in doc_ids:
-            bm25_list.append(doc_scores_bm25.get(doc_id))
-            tfidf_list.append(doc_scores_tfidf.get(doc_id))
+        if len(doc_ids) > 0:
+            # Create arrays of scores with fallback defaults.
+            bm25_list, tfidf_list = [], []
+            for doc_id in doc_ids:
+                bm25_list.append(doc_scores_bm25.get(doc_id))
+                tfidf_list.append(doc_scores_tfidf.get(doc_id))
 
-        bm25_arr = np.array(bm25_list)
-        tfidf_arr = np.array(tfidf_list)
+            bm25_arr = np.array(bm25_list)
+            tfidf_arr = np.array(tfidf_list)
 
-        max_bm25 = bm25_arr.max()
-        min_bm25 = bm25_arr.min()
-        max_tfidf = tfidf_arr.max()
-        min_tfidf = tfidf_arr.min()
+            max_bm25 = bm25_arr.max()
+            min_bm25 = bm25_arr.min()
+            max_tfidf = tfidf_arr.max()
+            min_tfidf = tfidf_arr.min()
 
-        bm25_weight, tfidf_weight = 0.5, 0.3
+            bm25_weight, tfidf_weight = 0.5, 0.3
 
-        norm_bm25 = (bm25_arr - min_bm25) / (max_bm25 - min_bm25 + 1e-9)
-        norm_tfidf = (tfidf_arr - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)
-        weighted_scores = (bm25_weight * norm_bm25 + tfidf_weight * norm_tfidf)
+            norm_bm25 = (bm25_arr - min_bm25) / (max_bm25 - min_bm25 + 1e-9)
+            norm_tfidf = (tfidf_arr - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)
+            weighted_scores = (bm25_weight * norm_bm25 + tfidf_weight * norm_tfidf)
 
-        ranked_docs = dict(zip(doc_ids, weighted_scores))
-        print("Length of ranked_docs in ingredients search: " + str(len(ranked_docs)))
+            ranked_docs = dict(zip(doc_ids, weighted_scores))
+            print("Length of ranked_docs in ingredients search: " + str(len(ranked_docs)))
+        else:
+            ranked_docs = []
 
         return ranked_docs
 
@@ -594,7 +567,7 @@ class QueryProcessor:
         with self.env.begin() as txn:
             tokens = processed_query.get('tokens', [])
             ngrams = processed_query.get('n_grams', [])
-
+            
             # Process individual tokens using the token cache.
             for token in tokens:
                 start_d = time.time()
@@ -604,23 +577,23 @@ class QueryProcessor:
                     continue
 
                 matching_docs.update(token_results.keys())
-
+                
                 if dietary_preference:
                     for doc_id, scores in token_results.items():
                         # Cache repeated lookups in local variables.
                         dietary_flags = scores.get('dietary_flags', 0)
                         bm25_val = scores.get('bm25', 0)
                         tfidf_val = scores.get('tfidf', 0)
-
+                        
                         # Extract the dietary bits once.
                         is_vegan = (dietary_flags >> 2) & 1
                         is_vegetarian = (dietary_flags >> 1) & 1
                         is_gluten_free = dietary_flags & 1
-
+                        
                         # Consolidate dietary checks in a single condition.
                         if ((dietary_preference == 1 and not is_vegan) or
-                                (dietary_preference == 2 and not is_vegetarian) or
-                                (dietary_preference == 3 and not is_gluten_free)):
+                            (dietary_preference == 2 and not is_vegetarian) or
+                            (dietary_preference == 3 and not is_gluten_free)):
                             diet_exclusions.append(doc_id)
                             continue
 
@@ -630,7 +603,7 @@ class QueryProcessor:
                     for doc_id, scores in token_results.items():
                         doc_scores_bm25[doc_id] += scores.get('bm25', 0)
                         doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
-
+            
             # Process n-grams similarly.
             for ngram in ngrams:
                 # Convert ngram into a list of tokens.
@@ -641,7 +614,7 @@ class QueryProcessor:
                     threshold = 5
                 else:
                     continue
-
+                
                 token_results_map = {}
                 valid_ngram = True
                 # Fetch results for each token in the ngram.
@@ -687,7 +660,7 @@ class QueryProcessor:
                             doc_scores_bm25[doc_id] += scores.get('bm25', 0)
                             doc_scores_tfidf[doc_id] += scores.get('tfidf', 0)
                         proximity_scores[doc_id] = 1 / (1 + threshold)
-
+            
             exclude_docs.update(diet_exclusions)
             final_docs = matching_docs - exclude_docs
             print(f'TEXT SEARCH | Searching: {time.time() - start}')
@@ -703,37 +676,42 @@ class QueryProcessor:
         # Convert the final_docs set to a NumPy array
         doc_ids = np.array(list(final_docs))
 
-        # Create arrays of scores with fallback defaults.
-        bm25_list, tfidf_list, prox_list = [], [], []
-        for doc_id in doc_ids:
-            bm25_list.append(doc_scores_bm25.get(doc_id))
-            tfidf_list.append(doc_scores_tfidf.get(doc_id))
-            prox_list.append(proximity_scores.get(doc_id, min_prox))
+        if len(doc_ids) > 0:
+            # Create arrays of scores with fallback defaults.
+            bm25_list, tfidf_list, prox_list = [], [], []
+            for doc_id in doc_ids:
+                bm25_list.append(doc_scores_bm25.get(doc_id))
+                tfidf_list.append(doc_scores_tfidf.get(doc_id))
+                prox_list.append(proximity_scores.get(doc_id, min_prox))
 
-        bm25_arr = np.array(bm25_list)
-        tfidf_arr = np.array(tfidf_list)
-        prox_arr = np.array(prox_list)
+            bm25_arr = np.array(bm25_list)
+            tfidf_arr = np.array(tfidf_list)
+            prox_arr = np.array(prox_list)
 
-        max_bm25 = bm25_arr.max()
-        min_bm25 = bm25_arr.min()
-        max_tfidf = tfidf_arr.max()
-        min_tfidf = tfidf_arr.min()
+            max_bm25 = bm25_arr.max()
+            min_bm25 = bm25_arr.min()
+            max_tfidf = tfidf_arr.max()
+            min_tfidf = tfidf_arr.min()
+            
 
-        # Vectorized normalization (adding a small constant to avoid division by zero)
-        norm_bm25 = (bm25_arr - min_bm25) / (max_bm25 - min_bm25 + 1e-9)
-        norm_tfidf = (tfidf_arr - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)
-        norm_prox = (prox_arr - min_prox) / (max_prox - min_prox + 1e-9)
+            # Vectorized normalization (adding a small constant to avoid division by zero)
+            norm_bm25 = (bm25_arr - min_bm25) / (max_bm25 - min_bm25 + 1e-9)
+            norm_tfidf = (tfidf_arr - min_tfidf) / (max_tfidf - min_tfidf + 1e-9)
+            norm_prox = (prox_arr - min_prox) / (max_prox - min_prox + 1e-9)
 
-        # Compute the weighted sum for each document.
-        weighted_scores = (bm25_weight * norm_bm25 +
-                           tfidf_weight * norm_tfidf +
-                           proximity_weight * norm_prox)
+            # Compute the weighted sum for each document.
+            weighted_scores = (bm25_weight * norm_bm25 +
+                            tfidf_weight * norm_tfidf +
+                            proximity_weight * norm_prox)
 
-        # Convert the results back into a dictionary.
-        ranked_docs = dict(zip(doc_ids, weighted_scores))
+            # Convert the results back into a dictionary.
+            ranked_docs = dict(zip(doc_ids, weighted_scores))
+        else:
+            ranked_docs = []
         print(f'TEXT SEARCH | Merging Ranks: {time.time() - start}')
         print("length of ranked_docs in text search: " + str(len(ranked_docs)))
         return ranked_docs
+
 
     def bm25_tfidf_search(self, doc_set, query_terms, txn, top_n=100):
         """
@@ -859,15 +837,15 @@ class QueryProcessor:
         return conn
 
     def create_new_connection(self):
-        db_user, db_pass, db_name, db_instance = self.get_db_credentials()
-        connector = Connector()
-        return connector.connect(
-            db_instance,
-            "pg8000",
-            user=db_user,
-            password=db_pass,
-            db=db_name
-        )
+            db_user, db_pass, db_name, db_instance = self.get_db_credentials()
+            connector = Connector()
+            return connector.connect(
+                db_instance,
+                "pg8000",
+                user=db_user,
+                password=db_pass,
+                db=db_name
+            )
 
     def get_recipe_from_store(self, paged_documents, diet_preference):
         document_ids = [str(doc[0]) for doc in paged_documents]
@@ -899,9 +877,7 @@ class QueryProcessor:
         conn = self.db_pool.get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT recipe_id, title, url, ingredients, instructions FROM recipe_extended WHERE recipe_id = %s",
-                (recipe_id,))
+            cursor.execute("SELECT recipe_id, title, url, ingredients, instructions FROM recipe_extended WHERE recipe_id = %s", (recipe_id,))
             recipe_details = cursor.fetchall()
         finally:
             self.db_pool.release_connection(conn)
@@ -917,7 +893,6 @@ class QueryProcessor:
             return recipe_dict
         else:
             return "No recipe found"
-
 
 if __name__ == "__main__":
     pass
